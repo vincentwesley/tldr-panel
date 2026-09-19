@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 (unreleased): UI polish
+
+- Cleaner, calmer side panel: design tokens, sticky top bar with refresh, page title subtitle, quieter Style/Detail controls, larger reading text, ghost Copy with "Copied" feedback, skeleton loading, glyphs on state cards, slim stale notice, low-key footer.
+- No behaviour, permission or accessibility changes. Store screenshots regenerated (result images now use the e2e fake text).
+
 ## Unreleased (post-review fixes)
 
 - **Fixed the core bug:** `openPanelOnActionClick` opens the panel but does not grant `activeTab`, so
