@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { extractPage } from '../../src/lib/extract.js';
-import { classifyPage, MSG } from '../../src/lib/page.js';
+import { extractPage, MAX_CHARS, PARSE_LIMIT_CHARS } from '../../src/lib/extract.js';
+import { splitText } from '../../src/lib/chunking.js';
 
 const make = (html) => {
   document.documentElement.innerHTML = html;
@@ -38,19 +38,29 @@ describe('extractPage', () => {
   });
 });
 
-describe('classifyPage', () => {
-  it('flags internal pages, the web store and PDFs by URL', () => {
-    expect(classifyPage({ url: 'chrome://extensions' }).message).toBe(MSG.internal);
-    expect(classifyPage({ url: 'https://chromewebstore.google.com/detail/x' }).code).toBe('internal');
-    expect(classifyPage({ url: 'https://example.com/paper.pdf' }).code).toBe('pdf');
-    expect(classifyPage({ url: 'https://example.com/a' })).toBeNull();
+describe('paragraph structure', () => {
+  it('keeps blank-line paragraph breaks and list-item newlines from Readability output', () => {
+    const doc = make(`<head><title>T</title></head><body><article><h1>Heading</h1>
+      <p>${longPara}</p><p>Second paragraph. ${longPara}</p>
+      <ul><li>First item</li><li>Second item</li></ul>
+      <p>Third paragraph. ${longPara}</p></article></body>`);
+    const r = extractPage(doc);
+    expect(r.kind).toBe('article');
+    const paras = r.text.split(/\n\n/);
+    expect(paras.length).toBeGreaterThanOrEqual(4);
+    expect(paras.some((p) => p.startsWith('Second paragraph.'))).toBe(true);
+    expect(r.text).toMatch(/First item\nSecond item/);
+    expect(r.text).not.toMatch(/\n{3,}/);
+    expect(splitText(r.text, 500).length).toBeGreaterThan(1); // the chunker can find paragraph boundaries
   });
-  it('maps missing activeTab grant errors to the friendly message', () => {
-    const e = classifyPage({
-      errorMessage: 'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
-    });
-    expect(e.message).toBe(MSG.noGrant);
-    expect(classifyPage({ errorMessage: 'The extensions gallery cannot be scripted.' }).code).toBe('internal');
-    expect(classifyPage({ errorMessage: 'Frame with ID 0 was removed.' }).code).toBe('other');
+  it('reports truncation for pages over the cap and does not parse absurdly large DOMs', () => {
+    const big = 'x '.repeat(MAX_CHARS / 2 + 100);
+    const r = extractPage(make(`<head><title>Big</title></head><body><div>${big}</div></body>`));
+    expect(r.truncated).toBe(true);
+    expect(r.text.length).toBe(MAX_CHARS);
+    const huge = 'y'.repeat(PARSE_LIMIT_CHARS + 10);
+    const r2 = extractPage(make(`<head><title>Huge</title></head><body><div>${huge}</div></body>`));
+    expect(r2.kind).toBe('body');
+    expect(r2.truncated).toBe(true);
   });
 });

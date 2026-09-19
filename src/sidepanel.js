@@ -1,52 +1,106 @@
 import * as adapter from './lib/summarizer.js';
 import { summarizeLong } from './lib/pipeline.js';
 import { consumeStream } from './lib/stream.js';
-import { renderMarkdown } from './lib/markdown.js';
-import { getTargetTab, extractFromTab, PageError } from './lib/page.js';
+import { renderMarkdown, toPlainText } from './lib/markdown.js';
+import { getTargetTab, extractFromTab, PageError, MSG } from './lib/page.js';
+import { createActivationListener } from './lib/activation.js';
 
 const $ = (id) => document.getElementById(id);
-const STATES = ['loading', 'download', 'unavailable', 'error', 'result'];
+const STATES = ['loading', 'download', 'unavailable', 'notice', 'error', 'result'];
+const TYPES = ['tldr', 'key-points', 'headline'];
+const LENGTHS = ['short', 'medium', 'long'];
+const NEUTRAL_CODES = new Set(['internal', 'pdf', 'empty', 'file', 'no-grant']);
 const prefs = { type: 'tldr', length: 'medium' };
+const DEBOUNCE_MS = 400;
+const NOTE_STOPPED = 'Stopped early. This summary is incomplete.';
+const NOTE_TRUNCATED = 'This page is very long; only the first part was summarized.';
 
-let page = null; // last extraction
+let page = null; // last successful extraction (null after a failed re-extraction)
+let currentTabId = null; // tab the panel is summarizing
+let ownTabId = null; // set only when the panel is open as a normal tab (tests)
+let panelWindowId = null;
+let stale = false; // user switched tabs / the tab navigated since the last extraction
+let navigated = false;
 let lastText = '';
 let controller = null;
 let runId = 0;
-let summarizer = null;
+let running = false;
+let announced = 0;
+let debounceTimer = null;
+let statusTimer = null;
 
+// ---------- small UI helpers ----------
 function show(...names) {
   for (const s of STATES) $(`state-${s}`).hidden = !names.includes(s);
+  const loading = names.includes('loading');
+  $('actions').hidden = loading || !names.some((n) => ['result', 'error', 'notice'].includes(n));
+  $('copy-btn').hidden = loading || !names.includes('result') || !lastText;
+}
+
+function setStatus(text) {
+  const el = $('status');
+  clearTimeout(statusTimer);
+  el.textContent = '';
+  if (text) statusTimer = setTimeout(() => (el.textContent = text), 50);
 }
 
 function setBusy(busy) {
-  $('cancel-btn').hidden = !busy;
-  $('again-btn').disabled = busy;
   $('result').setAttribute('aria-busy', String(busy));
-  $('copy-btn').hidden = busy || !lastText;
+  $('again-btn').setAttribute('aria-disabled', String(busy));
 }
 
-function setLoading(text) {
-  $('loading-text').textContent = text;
+const setLoading = (text) => ($('loading-text').textContent = text);
+
+function setTitle(text) {
+  const el = $('page-title');
+  el.textContent = text || '';
+  el.title = text || '';
+  el.hidden = !text || stale;
+}
+
+function setNote(...notes) {
+  const el = $('result-note');
+  el.textContent = notes.filter(Boolean).join(' ');
+  el.hidden = !el.textContent;
 }
 
 function renderResult(text) {
   lastText = text;
-  const el = $('result');
-  el.replaceChildren(renderMarkdown(text, document));
+  $('result').replaceChildren(renderMarkdown(text, document));
 }
 
+function focusIfLost(el) {
+  const a = document.activeElement;
+  if (!a || a === document.body || a.id === 'cancel-btn' || a.id === 'again-btn' || a.closest?.('[hidden]')) {
+    el.focus({ preventScroll: true });
+  }
+}
+
+function setStale(on) {
+  stale = on;
+  $('stale-banner').hidden = !on;
+  setTitle(on ? '' : page?.title || page?.url || '');
+}
+
+// ---------- preferences ----------
 async function loadPrefs() {
   try {
     const stored = await chrome.storage.local.get(['type', 'length']);
-    if (stored.type) prefs.type = stored.type;
-    if (stored.length) prefs.length = stored.length;
+    const type = stored?.type === 'teaser' ? 'tldr' : stored?.type; // migrate the removed Teaser style
+    if (TYPES.includes(type)) prefs.type = type;
+    if (LENGTHS.includes(stored?.length)) prefs.length = stored.length;
   } catch {
-    /* storage unavailable: use defaults */
+    /* storage unavailable or malformed: keep defaults */
   }
-  for (const name of ['type', 'length']) {
-    const input = document.querySelector(`input[name="${name}"][value="${prefs[name]}"]`);
-    if (input) input.checked = true;
+  try {
+    for (const name of ['type', 'length']) {
+      const input = [...document.querySelectorAll(`input[name="${name}"]`)].find((i) => i.value === prefs[name]);
+      if (input) input.checked = true;
+    }
+  } catch {
+    /* ignore */
   }
+  syncOptions();
 }
 
 async function savePref(key, value) {
@@ -54,60 +108,99 @@ async function savePref(key, value) {
   try {
     await chrome.storage.local.set({ [key]: value });
   } catch {
-    /* ignore */
+    /* ignore: the choice still applies for this session */
   }
 }
 
-function options() {
+function syncOptions() {
+  $('more').hidden = prefs.type === 'headline'; // Detail does not apply to headlines
+}
+
+function options(withContext = true) {
   return adapter.buildOptions({
     type: prefs.type,
     length: prefs.length,
-    sharedContext: page?.title ? `Web page titled: ${page.title}` : undefined,
+    sharedContext: withContext && page?.title ? `Web page titled: ${page.title}` : undefined,
   });
 }
 
+// ---------- states ----------
 function showUnavailable(kind) {
-  $('unavailable-title').textContent = kind === 'missing' ? "This Chrome doesn't have the Summarizer API" : 'On-device summarizer unavailable';
-  $('unavailable-text').textContent =
-    kind === 'missing'
-      ? 'Update Chrome to version 138 or newer on a desktop computer.'
-      : "Chrome reports that this device can't run the built-in summarization model.";
+  const missing = kind === 'missing';
+  $('unavailable-title').textContent = missing ? 'Your version of Chrome is too old' : "Can't summarize on this device";
+  $('unavailable-text').textContent = missing
+    ? 'Update Chrome (menu > Help > About Google Chrome) to version 138 or newer on a desktop computer.'
+    : "Chrome's built-in AI isn't available here. This usually means the computer or Chrome setup doesn't meet its requirements (below), or the page isn't in English.";
+  $('unavailable-extra').hidden = missing;
   show('unavailable');
+  $('unavailable-title').focus();
 }
 
-function showError(message, title = 'Something went wrong') {
+function showNotice(title, message) {
+  $('notice-title').textContent = title;
+  $('notice-text').textContent = message;
+  show('notice');
+  $('notice-title').focus();
+}
+
+function showError(title, message) {
+  $('error-title').textContent = title;
   $('error-text').textContent = message;
-  $('state-error').querySelector('h2').textContent = title;
-  show('error');
+  show('error'); // unhide first, then move focus
+  $('error-title').focus();
+}
+
+function showDownload(availability) {
+  const btn = $('download-btn');
+  btn.textContent = availability === 'downloading' ? 'Resume download' : 'Download and summarize';
+  btn.setAttribute('aria-disabled', 'false');
+  $('download-progress-wrap').hidden = true;
+  $('download-cancel-btn').hidden = true;
+  show('download');
 }
 
 function describeError(e) {
-  if (e instanceof PageError) return { message: e.message, title: 'Cannot read this page' };
+  if (e instanceof PageError) {
+    return NEUTRAL_CODES.has(e.code)
+      ? { kind: 'notice', title: "Can't read this page", message: e.message }
+      : { kind: 'error', title: 'Something went wrong', message: e.message };
+  }
   switch (e?.name) {
     case 'AbortError':
-      return { message: 'Cancelled. Press "Summarize again" to retry.', title: 'Cancelled', aborted: true };
+      return { kind: 'abort' };
     case 'NotSupportedError':
-      return {
-        message: "Chrome's on-device summarizer doesn't support this page's language or these options yet.",
-        title: 'Language not supported',
-      };
+      return { kind: 'error', title: 'Language not supported', message: "Chrome's on-device summarizer doesn't support this page's language or these options yet." };
     case 'NetworkError':
-      return { message: 'The model download failed. Check your connection and try again.', title: 'Download failed' };
+      return { kind: 'error', title: 'Download failed', message: 'The model download failed. Check your connection and try again.' };
     case 'QuotaExceededError':
-      return { message: 'This page is too long to summarize on-device.', title: 'Page too long' };
+    case 'TooLongError':
+      return { kind: 'error', title: 'Page too long', message: 'This page is too long to summarize on-device.' };
+    case 'EmptyOutputError':
+      return { kind: 'error', title: 'No summary produced', message: "The model didn't return a summary for this page. Try again, or try a different style." };
     default:
-      return { message: String(e?.message || e || 'Unknown error'), title: 'Something went wrong' };
+      console.error('TL;DR Panel:', e);
+      return { kind: 'error', title: 'Something went wrong', message: MSG.generic };
   }
 }
 
-function handleError(e, id) {
+function handleError(e, id, { fromDownload = false, availability } = {}) {
   if (id !== runId) return;
   const d = describeError(e);
-  if (d.aborted && lastText) {
-    show('result');
+  if (d.kind === 'abort') {
+    if (fromDownload) {
+      showDownload(availability || 'downloadable'); // neutral: back to the download card, not an error
+    } else if (lastText) {
+      setNote(page?.truncated && NOTE_TRUNCATED, NOTE_STOPPED);
+      show('result');
+      setStatus('Stopped');
+    } else {
+      showNotice('Cancelled', 'Press "Summarize again" to retry.');
+      setStatus('Stopped');
+    }
     return;
   }
-  showError(d.message, d.title);
+  if (d.kind === 'notice') showNotice(d.title, d.message);
+  else showError(d.title, d.message);
 }
 
 function newController() {
@@ -116,73 +209,137 @@ function newController() {
   return controller.signal;
 }
 
-async function run({ reextract = true } = {}) {
+async function resolveTab(tabId) {
+  if (tabId != null) return chrome.tabs.get(tabId);
+  if (!stale && currentTabId != null) {
+    try {
+      return await chrome.tabs.get(currentTabId);
+    } catch {
+      /* tab closed: fall through to the active tab */
+    }
+  }
+  return getTargetTab();
+}
+
+// ---------- main flow ----------
+async function run({ tabId = null, reextract = true } = {}) {
+  clearTimeout(debounceTimer);
   const id = ++runId;
   const signal = newController();
+  running = true;
   lastText = '';
   $('result').replaceChildren();
+  setNote();
+  setStatus('');
+  setStale(false);
+  navigated = false;
+  setTitle('');
   setBusy(true);
   show('loading');
   setLoading('Reading page...');
+  let availability;
   try {
-    const availability = await adapter.availability(options());
+    availability = await adapter.availability(options(false));
     if (id !== runId) return;
     if (availability === 'missing' || availability === 'unavailable') {
       showUnavailable(availability);
       return;
     }
     if (reextract || !page) {
-      const tab = await getTargetTab();
-      page = await extractFromTab(tab);
+      const tab = await resolveTab(tabId);
       if (id !== runId) return;
+      currentTabId = tab?.id ?? null;
+      let fresh;
+      try {
+        fresh = await extractFromTab(tab);
+      } catch (e) {
+        if (id === runId) page = null; // never summarize a stale page after a failed re-extraction
+        throw e;
+      }
+      if (id !== runId) return; // a newer run owns `page`
+      page = fresh;
     }
-    $('page-title').textContent = page.title || page.url || '';
+    setTitle(page.title || page.url || '');
     if (availability === 'downloadable' || availability === 'downloading') {
-      $('download-btn').disabled = false;
-      $('download-progress-wrap').hidden = true;
-      show('download');
+      showDownload(availability);
       return;
     }
     await summarizePage(signal, id, null);
   } catch (e) {
     handleError(e, id);
   } finally {
-    if (id === runId) setBusy(false);
+    if (id === runId) {
+      running = false;
+      setBusy(false);
+    }
   }
 }
 
 async function onDownloadClick() {
+  if ($('download-btn').getAttribute('aria-disabled') === 'true') return;
   // create() must be called synchronously from this click handler (transient user activation).
   const id = ++runId;
   const signal = newController();
-  $('download-btn').disabled = true;
+  running = true;
+  announced = 0;
+  const availability = $('download-btn').textContent.startsWith('Resume') ? 'downloading' : 'downloadable';
+  const createPromise = adapter.create(options(), {
+    signal,
+    onProgress: (f) => {
+      if (id !== runId) return;
+      const pct = Math.round(f * 100);
+      $('download-progress').value = pct;
+      $('download-progress-text').textContent = pct >= 100 ? 'Download complete. Setting up...' : `${pct}%`;
+      for (const t of [25, 50, 75, 100]) {
+        if (pct >= t && announced < t) {
+          announced = t;
+          setStatus(t === 100 ? 'Download complete' : `Downloaded ${t}%`);
+        }
+      }
+    },
+  });
+  $('download-btn').setAttribute('aria-disabled', 'true');
   $('download-progress-wrap').hidden = false;
+  $('download-cancel-btn').hidden = false;
   setBusy(true);
   try {
-    const created = await adapter.create(options(), {
-      signal,
-      onProgress: (f) => {
-        const pct = Math.round(f * 100);
-        $('download-progress').value = pct;
-        $('download-progress-text').textContent = `${pct}%`;
-      },
-    });
+    const created = await createPromise;
+    if (id !== runId) {
+      adapter.destroy(created);
+      return;
+    }
     await summarizePage(signal, id, created);
   } catch (e) {
-    $('download-btn').disabled = false;
-    handleError(e, id);
+    handleError(e, id, { fromDownload: !$('state-download').hidden, availability });
   } finally {
-    if (id === runId) setBusy(false);
+    if (id === runId) {
+      running = false;
+      setBusy(false);
+    }
   }
 }
 
 async function summarizePage(signal, id, preCreated) {
-  setLoading('Preparing model...');
+  let s = preCreated;
+  if (!s) {
+    setLoading('Preparing the on-device model...');
+    show('loading');
+    const prepTimer = setTimeout(() => setLoading('Preparing the on-device model (first time can take up to a minute)...'), 2500);
+    try {
+      s = await adapter.create(options(), { signal });
+    } finally {
+      clearTimeout(prepTimer);
+    }
+    if (id !== runId) {
+      adapter.destroy(s);
+      return;
+    }
+  }
+  setLoading('Reading the page...');
   show('loading');
-  const s = preCreated ?? (await adapter.create(options(), { signal }));
-  summarizer = s;
   let chunkSummarizer = null;
   const context = page.title ? `Page title: ${page.title}` : undefined;
+  const truncatedNote = page.truncated ? NOTE_TRUNCATED : '';
   try {
     const out = await summarizeLong(page.text, {
       quota: adapter.inputQuota(s),
@@ -205,6 +362,7 @@ async function summarizePage(signal, id, preCreated) {
         if (id !== runId) return;
         if (p.final) {
           setLoading('Writing summary...');
+          setNote(truncatedNote);
           show('loading', 'result');
         } else {
           setLoading(`Summarizing part ${p.index} of ${p.total}...`);
@@ -213,28 +371,73 @@ async function summarizePage(signal, id, preCreated) {
       },
     });
     if (id !== runId) return;
+    if (!out || !out.trim()) {
+      const e = new Error('empty output');
+      e.name = 'EmptyOutputError';
+      throw e;
+    }
     renderResult(out);
+    setNote(truncatedNote);
     show('result');
+    setStatus('Summary ready');
+    focusIfLost($('result'));
   } finally {
     adapter.destroy(s);
     adapter.destroy(chunkSummarizer);
-    if (summarizer === s) summarizer = null;
   }
 }
 
 async function copy() {
+  if (!lastText) return;
+  const head = page?.url ? `${page.title || page.url}\n${page.url}\n\n` : '';
+  const btn = $('copy-btn');
   try {
-    await navigator.clipboard.writeText(lastText);
-    $('copy-status').textContent = 'Copied to clipboard';
-    $('copy-btn').textContent = 'Copied';
+    await navigator.clipboard.writeText(head + toPlainText(lastText));
+    btn.textContent = 'Copied';
+    setStatus('Copied to clipboard');
   } catch {
-    $('copy-status').textContent = 'Copy failed';
-    $('copy-btn').textContent = 'Copy failed';
+    btn.textContent = 'Copy failed';
+    setStatus('Copy failed');
   }
   setTimeout(() => {
-    $('copy-btn').textContent = 'Copy';
-    $('copy-status').textContent = '';
+    btn.textContent = 'Copy';
   }, 1500);
+}
+
+// ---------- tab tracking and activation ----------
+async function initTabTracking() {
+  try {
+    ownTabId = (await chrome.tabs.getCurrent())?.id ?? null; // undefined inside a real side panel
+    panelWindowId = (await chrome.windows.getCurrent())?.id ?? null;
+  } catch {
+    /* not fatal */
+  }
+  chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+    if (tabId === ownTabId || currentTabId == null) return;
+    if (panelWindowId != null && windowId !== panelWindowId) return;
+    if (tabId !== currentTabId) setStale(true);
+    else if (!navigated) setStale(false);
+  });
+  chrome.tabs.onUpdated.addListener((tabId, info) => {
+    if (tabId === currentTabId && info.status === 'loading') {
+      navigated = true;
+      setStale(true);
+    }
+  });
+  chrome.runtime.onMessage.addListener(
+    createActivationListener({
+      runtimeId: chrome.runtime.id,
+      onActivated: (tabId) => {
+        if (running && tabId === currentTabId) return; // the initial run for this very click is already in flight
+        run({ tabId });
+      },
+    }),
+  );
+}
+
+function scheduleRerun() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => run({ reextract: stale || !page }), DEBOUNCE_MS);
 }
 
 async function init() {
@@ -243,13 +446,20 @@ async function init() {
   for (const input of document.querySelectorAll('#controls input')) {
     input.addEventListener('change', async () => {
       await savePref(input.name, input.value);
-      if (page) run({ reextract: false });
+      syncOptions();
+      scheduleRerun();
     });
   }
-  $('again-btn').addEventListener('click', () => run());
+  $('again-btn').addEventListener('click', () => {
+    if ($('again-btn').getAttribute('aria-disabled') === 'true') return;
+    run();
+  });
   $('copy-btn').addEventListener('click', copy);
-  $('cancel-btn').addEventListener('click', () => controller?.abort());
+  const cancel = () => controller?.abort();
+  $('cancel-btn').addEventListener('click', cancel);
+  $('download-cancel-btn').addEventListener('click', cancel);
   $('download-btn').addEventListener('click', onDownloadClick);
+  await initTabTracking();
   run();
 }
 

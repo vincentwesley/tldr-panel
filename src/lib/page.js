@@ -1,9 +1,11 @@
 // Locating the target tab and extracting its text via chrome.scripting.
 export const MSG = {
-  noGrant: 'Click the TL;DR Panel toolbar icon on this tab to summarize it.',
-  internal: "Chrome doesn't let extensions read its own pages (chrome://, about:, the Web Store). Open a regular web page and try again.",
-  pdf: "PDF files can't be summarized yet. Open a regular web page and try again.",
-  empty: "This page doesn't have enough readable text to summarize.",
+  noGrant: "To read this tab, click the TL;DR Panel icon in Chrome's toolbar (look under the puzzle-piece menu if you don't see it).",
+  internal: "Chrome doesn't let extensions read this kind of page (New Tab, Settings, the Web Store). Open an article or website and try again.",
+  pdf: "PDFs can't be summarized yet. Open a web page instead.",
+  empty: "There isn't enough text on this page to summarize.",
+  file: "To summarize local files, turn on 'Allow access to file URLs' for TL;DR Panel in chrome://extensions.",
+  generic: 'Something unexpected happened. Try again, or reload the page.',
 };
 
 export class PageError extends Error {
@@ -16,28 +18,44 @@ export class PageError extends Error {
 
 const INTERNAL_URL = /^(chrome|chrome-extension|edge|about|devtools|view-source|chrome-untrusted):/i;
 const WEB_STORE = /^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i;
+const FILE_URL = /^file:/i;
+const NO_GRANT = /cannot access contents of|must request permission|activetab|missing host permission/i;
+const INTERNAL_ERR = /extensions gallery|cannot access a chrome|cannot be scripted|cannot access.*chrome-extension:/i;
 
-/** Map a URL / scripting error to a friendly PageError, or return null when nothing is wrong. */
-export function classifyPage({ url, errorMessage } = {}) {
+/** Text of whatever executeScript rejected with / reported (Error, {message}, string...). */
+export function errorText(e) {
+  if (!e) return '';
+  if (typeof e === 'string') return e;
+  if (typeof e.message === 'string') return e.message;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return '';
+  }
+}
+
+/** Map a URL / content type / scripting error to a friendly PageError, or return null when nothing is wrong. */
+export function classifyPage({ url, errorMessage, contentType } = {}) {
   if (url) {
     if (INTERNAL_URL.test(url) || WEB_STORE.test(url)) return new PageError(MSG.internal, 'internal');
     if (/\.pdf($|[?#])/i.test(url)) return new PageError(MSG.pdf, 'pdf');
   }
+  if (contentType && /pdf/i.test(contentType)) return new PageError(MSG.pdf, 'pdf');
   if (errorMessage) {
-    if (/chrome:\/\/|extensions gallery|cannot be scripted|chrome-extension:\/\//i.test(errorMessage)) {
-      return new PageError(MSG.internal, 'internal');
-    }
-    if (/cannot access|activeTab|permission|host permission/i.test(errorMessage)) {
-      return new PageError(MSG.noGrant, 'no-grant');
-    }
-    return new PageError(`Couldn't read this page: ${errorMessage}`, 'other');
+    if (INTERNAL_ERR.test(errorMessage)) return new PageError(MSG.internal, 'internal');
+    if (url && FILE_URL.test(url)) return new PageError(MSG.file, 'file');
+    if (NO_GRANT.test(errorMessage)) return new PageError(MSG.noGrant, 'no-grant');
+    return new PageError(MSG.generic, 'other');
   }
   return null;
 }
 
-export async function getTargetTab(search = location.search) {
-  const override = new URLSearchParams(search).get('tabId');
-  if (override) return chrome.tabs.get(Number(override));
+export async function getTargetTab() {
+  // Test hook: compiled out of the production build (esbuild define __E2E__=false).
+  if (typeof __E2E__ !== 'undefined' && __E2E__) {
+    const override = new URLSearchParams(location.search).get('tabId');
+    if (override) return chrome.tabs.get(Number(override));
+  }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
@@ -48,17 +66,20 @@ export async function extractFromTab(tab) {
   if (early) throw early;
   let result;
   try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['extract.js'] });
+    const inject = await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['extract.js'] });
+    if (inject?.[0]?.error) throw inject[0].error;
     const [res] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => globalThis.__tldrPanelExtract(),
     });
+    if (res?.error) throw res.error;
     result = res?.result;
   } catch (e) {
-    throw classifyPage({ url: tab.url, errorMessage: String(e?.message || e) });
+    throw classifyPage({ url: tab.url, errorMessage: errorText(e) || 'unknown', contentType: undefined });
   }
-  if (!result) throw new PageError(MSG.pdf, 'pdf');
-  if (/pdf/i.test(result.contentType)) throw new PageError(MSG.pdf, 'pdf');
+  if (!result) throw new PageError(MSG.generic, 'other');
+  const pdf = classifyPage({ contentType: result.contentType });
+  if (pdf) throw pdf;
   if (!result.text || result.text.length < 40) throw new PageError(MSG.empty, 'empty');
   return { ...result, url: tab.url };
 }

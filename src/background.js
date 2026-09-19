@@ -1,1 +1,3 @@
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+import { registerBackground } from './lib/background-wiring.js';
+
+registerBackground(chrome);

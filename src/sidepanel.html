@@ -9,69 +9,90 @@
 <body>
   <header>
     <h1>TL;DR Panel</h1>
-    <p id="page-title" class="page-title"></p>
+    <p id="page-title" class="page-title" dir="auto" hidden></p>
   </header>
 
+  <p id="stale-banner" class="banner" hidden>You switched pages. Click the TL;DR Panel icon to summarize this one.</p>
+
   <form id="controls" class="controls" aria-label="Summary options">
-    <fieldset class="segmented">
+    <fieldset class="segmented" id="style-fs">
       <legend>Style</legend>
-      <label><input type="radio" name="type" value="tldr" checked><span>TL;DR</span></label>
+      <label><input type="radio" name="type" value="tldr" checked><span>Summary</span></label>
       <label><input type="radio" name="type" value="key-points"><span>Key points</span></label>
-      <label><input type="radio" name="type" value="teaser"><span>Teaser</span></label>
       <label><input type="radio" name="type" value="headline"><span>Headline</span></label>
     </fieldset>
-    <fieldset class="segmented">
-      <legend>Length</legend>
-      <label><input type="radio" name="length" value="short"><span>Short</span></label>
-      <label><input type="radio" name="length" value="medium" checked><span>Medium</span></label>
-      <label><input type="radio" name="length" value="long"><span>Long</span></label>
-    </fieldset>
+    <details id="more" class="more">
+      <summary>More options</summary>
+      <fieldset class="segmented" id="length-fs">
+        <legend>Detail</legend>
+        <label><input type="radio" name="length" value="short"><span>Brief</span></label>
+        <label><input type="radio" name="length" value="medium" checked><span>Standard</span></label>
+        <label><input type="radio" name="length" value="long"><span>Detailed</span></label>
+      </fieldset>
+    </details>
   </form>
 
   <main>
     <section id="state-loading" class="state" hidden>
-      <p id="loading-text" role="status">Reading page...</p>
-      <div class="spinner" aria-hidden="true"></div>
-    </section>
-
-    <section id="state-download" class="state" hidden>
-      <h2>On-device model needed</h2>
-      <p>Chrome needs to download its built-in summarization model once (several GB). It stays on your computer and nothing about the page is sent anywhere.</p>
-      <button id="download-btn" type="button" class="primary">Download on-device model</button>
-      <div id="download-progress-wrap" hidden>
-        <progress id="download-progress" max="100" value="0" aria-label="Model download progress"></progress>
-        <p id="download-progress-text" role="status">0%</p>
+      <div class="loading-row">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="loading-text">Reading page...</p>
+        <button id="cancel-btn" type="button" class="link-btn">Cancel</button>
       </div>
     </section>
 
-    <section id="state-unavailable" class="state" hidden>
-      <h2 id="unavailable-title">Summarizer not available</h2>
-      <p id="unavailable-text"></p>
-      <p>Chrome's built-in Summarizer needs:</p>
-      <ul class="requirements">
-        <li>Desktop Chrome 138 or newer (Windows, macOS, Linux, ChromeOS)</li>
-        <li>About 22 GB of free disk space for the model</li>
-        <li>A GPU with more than 4 GB of VRAM, or 16 GB of RAM and 4 or more CPU cores</li>
-        <li>An unmetered network connection for the first download</li>
-      </ul>
+    <section id="state-download" class="state card" hidden>
+      <h2 tabindex="-1">One-time setup: download Chrome's on-device AI</h2>
+      <p>Summaries are written by an AI model that runs on your computer. Chrome downloads it once (it took about 7 minutes on a fast connection in our test, so best on Wi-Fi). After that it works offline, and the page you summarize never leaves your device.</p>
+      <p class="small">Chrome needs about 22 GB of free disk space to start the download.</p>
+      <div class="row">
+        <button id="download-btn" type="button" class="primary">Download and summarize</button>
+        <button id="download-cancel-btn" type="button" hidden>Cancel</button>
+      </div>
+      <div id="download-progress-wrap" hidden>
+        <progress id="download-progress" max="100" value="0" aria-label="Model download progress"></progress>
+        <p id="download-progress-text" class="small">0%</p>
+      </div>
     </section>
 
-    <section id="state-error" class="state" hidden>
-      <h2>Something went wrong</h2>
-      <p id="error-text" role="alert"></p>
+    <section id="state-unavailable" class="state card" hidden>
+      <h2 id="unavailable-title" tabindex="-1">Can't summarize on this device</h2>
+      <p id="unavailable-text"></p>
+      <div id="unavailable-extra">
+        <p>To see what Chrome says, open <strong>chrome://on-device-internals</strong>.</p>
+        <p class="small">Requirements:</p>
+        <ul class="requirements">
+          <li>Desktop Chrome 138 or newer</li>
+          <li>At least 22 GB of free disk space</li>
+          <li>A GPU with more than 4 GB of VRAM, or 16 GB of RAM and 4 or more CPU cores</li>
+          <li>Windows 10/11, macOS 13+, Linux, or Chromebook Plus</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="state-notice" class="state card neutral" hidden>
+      <h2 id="notice-title" tabindex="-1">Can't read this page</h2>
+      <p id="notice-text"></p>
+    </section>
+
+    <section id="state-error" class="state card error" hidden>
+      <h2 id="error-title" tabindex="-1">Something went wrong</h2>
+      <p id="error-text"></p>
     </section>
 
     <section id="state-result" class="state" hidden>
-      <div id="result" class="result" aria-live="polite" aria-busy="false"></div>
+      <div id="result" class="result" dir="auto" tabindex="-1" aria-busy="false"></div>
+      <p id="result-note" class="note" hidden></p>
     </section>
   </main>
 
-  <footer class="actions">
+  <div id="actions" class="actions" hidden>
     <button id="again-btn" type="button">Summarize again</button>
     <button id="copy-btn" type="button" hidden>Copy</button>
-    <button id="cancel-btn" type="button" hidden>Cancel</button>
-    <span id="copy-status" class="sr-only" role="status"></span>
-  </footer>
+  </div>
+
+  <p id="status" class="sr-only" role="status"></p>
+  <footer class="footnote">Summaries are in English.</footer>
 
   <script type="module" src="sidepanel.js"></script>
 </body>

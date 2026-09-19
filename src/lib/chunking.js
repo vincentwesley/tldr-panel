@@ -4,12 +4,16 @@ const SENTENCE_SPLIT = /(?<=[.!?])\s+/;
 
 /** Fraction of the input quota a single chunk may use. */
 export const CHUNK_BUDGET = 0.7;
+/** Never produce chunks smaller than this (characters): tiny chunks mean a runaway number of model calls. */
+export const MIN_CHUNK_CHARS = 100;
+
+const isWs = (ch) => /\s/.test(ch);
 
 /** Split text into pieces no longer than maxChars, preferring paragraph, then sentence, then word boundaries. */
 export function splitText(text, maxChars) {
-  const limit = Math.max(1, Math.floor(maxChars));
+  const limit = Number.isFinite(maxChars) ? Math.max(1, Math.floor(maxChars)) : Number.MAX_SAFE_INTEGER;
   const units = [];
-  for (const para of text.split(/\n{2,}/)) {
+  for (const para of String(text).split(/\n{2,}/)) {
     const p = para.trim();
     if (!p) continue;
     if (p.length <= limit) {
@@ -40,7 +44,13 @@ function hardSplit(s, limit) {
   const out = [];
   let rest = s;
   while (rest.length > limit) {
-    let cut = rest.lastIndexOf(' ', limit);
+    let cut = -1;
+    for (let i = limit; i >= 1; i--) {
+      if (isWs(rest[i])) {
+        cut = i;
+        break;
+      }
+    }
     if (cut < limit * 0.5) cut = limit;
     out.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
