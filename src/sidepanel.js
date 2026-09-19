@@ -33,8 +33,10 @@ let statusTimer = null;
 function show(...names) {
   for (const s of STATES) $(`state-${s}`).hidden = !names.includes(s);
   const loading = names.includes('loading');
-  $('actions').hidden = loading || !names.some((n) => ['result', 'error', 'notice'].includes(n));
+  $('again-btn').hidden = loading || !names.some((n) => ['result', 'error', 'notice'].includes(n));
   $('copy-btn').hidden = loading || !names.includes('result') || !lastText;
+  $('actions').hidden = $('copy-btn').hidden;
+  $('skeleton').hidden = names.includes('result'); // streaming text replaces the placeholder lines
 }
 
 function setStatus(text) {
@@ -114,6 +116,8 @@ async function savePref(key, value) {
 
 function syncOptions() {
   $('more').hidden = prefs.type === 'headline'; // Detail does not apply to headlines
+  const chosen = document.querySelector('input[name="length"]:checked + span');
+  $('more-summary').textContent = `Detail: ${chosen?.textContent || 'Standard'}`;
 }
 
 function options(withContext = true) {
@@ -383,16 +387,20 @@ async function copy() {
   if (!lastText) return;
   const head = page?.url ? `${page.title || page.url}\n${page.url}\n\n` : '';
   const btn = $('copy-btn');
+  const label = $('copy-label');
   try {
     await navigator.clipboard.writeText(head + toPlainText(lastText));
-    btn.textContent = 'Copied';
+    label.textContent = 'Copied';
+    btn.dataset.state = 'done';
     setStatus('Copied to clipboard');
   } catch {
-    btn.textContent = 'Copy failed';
+    label.textContent = 'Copy failed';
+    btn.dataset.state = 'fail';
     setStatus('Copy failed');
   }
   setTimeout(() => {
-    btn.textContent = 'Copy';
+    label.textContent = 'Copy';
+    delete btn.dataset.state;
   }, 1500);
 }
 
