@@ -2,7 +2,7 @@ import * as adapter from './lib/summarizer.js';
 import { summarizeLong } from './lib/pipeline.js';
 import { consumeStream } from './lib/stream.js';
 import { renderMarkdown, toPlainText } from './lib/markdown.js';
-import { getTargetTab, chooseTab, extractFromTab, PageError, MSG } from './lib/page.js';
+import { getTargetTab, chooseTab, extractFromTab, shouldStayStale, PageError, MSG } from './lib/page.js';
 import { createActivationListener } from './lib/activation.js';
 
 const $ = (id) => document.getElementById(id);
@@ -21,6 +21,7 @@ let ownTabId = null; // set only when the panel is open as a normal tab (tests)
 let panelWindowId = null;
 let stale = false; // user switched tabs / the tab navigated since the last extraction
 let navigated = false;
+let activatedTabId = null; // last tab the user activated in this window since the current run began
 let lastText = '';
 let controller = null;
 let runId = 0;
@@ -33,8 +34,10 @@ let statusTimer = null;
 function show(...names) {
   for (const s of STATES) $(`state-${s}`).hidden = !names.includes(s);
   const loading = names.includes('loading');
-  $('actions').hidden = loading || !names.some((n) => ['result', 'error', 'notice'].includes(n));
+  $('again-btn').hidden = loading || !names.some((n) => ['result', 'error', 'notice'].includes(n));
   $('copy-btn').hidden = loading || !names.includes('result') || !lastText;
+  $('actions').hidden = $('copy-btn').hidden;
+  $('skeleton').hidden = names.includes('result'); // streaming text replaces the placeholder lines
 }
 
 function setStatus(text) {
@@ -114,6 +117,8 @@ async function savePref(key, value) {
 
 function syncOptions() {
   $('more').hidden = prefs.type === 'headline'; // Detail does not apply to headlines
+  const chosen = document.querySelector('input[name="length"]:checked + span');
+  $('more-summary').textContent = `Detail: ${chosen?.textContent || 'Standard'}`;
 }
 
 function options(withContext = true) {
@@ -222,6 +227,7 @@ async function run({ tabId = null, reextract = true } = {}) {
   $('result').replaceChildren();
   setNote();
   setStatus('');
+  activatedTabId = null;
   const wasStale = stale; // the banner stays up until a fresh page was actually read
   setTitle('');
   setBusy(true);
@@ -241,7 +247,7 @@ async function run({ tabId = null, reextract = true } = {}) {
       currentTabId = tab?.id ?? null;
       let fresh;
       try {
-        fresh = await extractFromTab(tab);
+        fresh = await extractFromTab(tab, { afterClick: tabId != null });
       } catch (e) {
         if (id === runId) page = null; // never summarize a stale page after a failed re-extraction
         throw e;
@@ -250,7 +256,8 @@ async function run({ tabId = null, reextract = true } = {}) {
       page = fresh;
     }
     navigated = false;
-    setStale(false);
+    // The user may have switched tabs while the text was being read: keep the banner up in that case.
+    setStale(shouldStayStale({ runTabId: currentTabId, activatedTabId }));
     setTitle(page.title || page.url || '');
     if (availability === 'downloadable' || availability === 'downloading') {
       showDownload(availability);
@@ -383,16 +390,20 @@ async function copy() {
   if (!lastText) return;
   const head = page?.url ? `${page.title || page.url}\n${page.url}\n\n` : '';
   const btn = $('copy-btn');
+  const label = $('copy-label');
   try {
     await navigator.clipboard.writeText(head + toPlainText(lastText));
-    btn.textContent = 'Copied';
+    label.textContent = 'Copied';
+    btn.dataset.state = 'done';
     setStatus('Copied to clipboard');
   } catch {
-    btn.textContent = 'Copy failed';
+    label.textContent = 'Copy failed';
+    btn.dataset.state = 'fail';
     setStatus('Copy failed');
   }
   setTimeout(() => {
-    btn.textContent = 'Copy';
+    label.textContent = 'Copy';
+    delete btn.dataset.state;
   }, 1500);
 }
 
@@ -405,8 +416,10 @@ async function initTabTracking() {
     /* not fatal */
   }
   chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
-    if (tabId === ownTabId || currentTabId == null) return;
+    if (tabId === ownTabId) return;
     if (panelWindowId != null && windowId !== panelWindowId) return;
+    activatedTabId = tabId;
+    if (currentTabId == null) return;
     if (tabId !== currentTabId) setStale(true);
     else if (!navigated) setStale(false);
   });

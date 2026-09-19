@@ -130,6 +130,16 @@ test.describe('with fake Summarizer (e2e build)', () => {
     await expect(panel.locator('input[name=length][value=long]')).toBeChecked();
   });
 
+  test('top-bar refresh has an accessible name and the Detail toggle shows the current value', async () => {
+    const { panel } = await openPanel(h, { scenario: 'success' });
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    await expect(panel.getByRole('button', { name: 'Summarize again' })).toBeVisible();
+    await expect(panel.locator('#more summary')).toHaveText('Detail: Standard');
+    await panel.locator('#more summary').click();
+    await panel.getByLabel('Brief').check({ force: true });
+    await expect(panel.locator('#more summary')).toHaveText('Detail: Brief');
+  });
+
   test('Headline hides the Detail option', async () => {
     const { panel } = await openPanel(h, { scenario: 'success' });
     await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
@@ -292,6 +302,8 @@ test.describe('with fake Summarizer (e2e build)', () => {
     expect(clip).toContain('• Construction starts');
     expect(clip).not.toContain('**');
     expect(clip.startsWith('City approves new bike-lane network\nhttp://127.0.0.1:')).toBe(true);
+    await expect(panel.locator('#copy-btn')).toHaveText('Copied'); // visible feedback, not just the status line
+    await expect(panel.locator('#copy-btn')).toHaveText('Copy', { timeout: 4000 });
   });
 
   test('service worker "tldr:activated" message re-summarizes the given tab (second-tab flow)', async () => {

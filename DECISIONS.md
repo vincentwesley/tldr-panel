@@ -123,7 +123,7 @@ Each decision, its rationale, and what could not be verified.
   second sender cannot be simulated in Playwright.
 - **Real Chrome 153 + real model (Puppeteer, this round):** the panel from `dist-e2e` (identical code to
   `dist`, reached via `?tabId=`) extracted the fixture article and produced real streamed summaries in
-  light and dark with the final CSP. The result screenshots use that real output.
+  light and dark with the final CSP. (The store result screenshots were regenerated with real output again for 1.0.1; see Screenshots.)
 - **NOT verified this round (honest gaps):**
   - The shipped `dist/` with a real toolbar click producing an activeTab grant, and a click on a second
     tab re-summarizing while the panel is open. An OS-level attempt (SendKeys Alt+Shift+S) opened the
@@ -135,6 +135,61 @@ Each decision, its rationale, and what could not be verified.
   - Real clipboard copy (e2e stubs `navigator.clipboard`), real background download continuation after
     cancel, macOS/Linux, non-English pages, PDFs in the real viewer, Web Store pages.
 - **Screenshots** (`node scripts/screenshots.mjs`, needs `build --e2e`): 1280x800 with the fixture article
-  and the panel at 420px. Result screenshots use real model output (`docs/screenshots/raw/real-result-*`);
-  the download and unavailable states come from the e2e fake (they cannot be produced on this machine, as
+  and the panel at 420px. The two result screenshots use REAL Gemini Nano output with the 1.0.1 UI: real Chrome 153 driven by Puppeteer (throwaway profile copy holding the downloaded model, `triggerAction` on the fixture article, default Summary/Standard), panel captured at 420x800 in light and dark (gitignored `raw/real-result-{light,dark}.png`, which `scripts/screenshots.mjs` composites next to the page); the download and unavailable states come from the e2e fake (they cannot be produced on this machine, as
   the model is installed). Only the fixture page and the panel are captured, no browser chrome.
+
+## UI polish pass (1.0.1)
+
+Critique of 1.0.0 as rendered (16 states x 320/420/600 x light/dark, `node scripts/ui-states.mjs`):
+- Result was pushed about 190px down by title, Style label, control, "More options" and a footnote; controls
+  outweighed the summary. Below 360px the segmented control stacked into three full-width rows.
+- Selected segment was a solid accent fill (loudest thing on screen); two same-weight bordered buttons
+  ("Summarize again", "Copy") competed; copy feedback only changed a label.
+- Loading was a tiny spinner with a link-styled Cancel; cards had no visual anchor, error text was red on red
+  tint; spacing (14/10/8/6) and sizes (12/12.5/13/14/15) were ad hoc; header was a bare bold title.
+
+What changed and why:
+- Design tokens (spacing 4/8/12/16/24, type 12/13/14/15, radii 6/8/12, one accent, no shadows), 16px gutters.
+- Sticky top bar: logo, name, icon-only refresh (aria-label "Summarize again"), page title as subtitle. The
+  refresh action left the bottom row, which now holds only a ghost icon+label Copy that shows "Copied" with a check.
+- Style legend hidden visually (still the group name); Detail is one quiet line "Detail: Standard" that
+  expands to the Detail control (label kept in sync by JS). Selected segment: outlined accent, not filled.
+- Result is the hero: 15px/1.6, 68ch max, 12px paragraph gap. Truncated/stopped notes sit under the text.
+- Loading: muted status line + Cancel, plus shimmer skeleton lines (static under reduced motion) until text streams.
+- State cards: inline SVG glyph beside the title, one primary action, body text in normal colour (error keeps a
+  danger glyph/title/border). Stale banner is a slim inline notice; footnote is a low-key footer.
+- Kept: all ids used by tests, radio names/values, status line, focus management, forced-colors, dir=auto and
+  logical properties, no innerHTML, 32px targets, CSP. Copy shortened only in the download card.
+
+Deliberately not changed: no menu or settings page (nothing to put in it), no card around the summary (adds
+chrome), style/detail stay above the result (they act on it), no web fonts or icon fonts, no animation beyond the
+skeleton, no summary text shortening beyond one sentence in the download card, download flow/behaviour untouched.
+
+Contrast (WCAG 2.x, computed from the tokens; text needs 4.5, UI boundaries 3):
+| Pair | Light | Dark |
+|---|---|---|
+| text / bg | 16.56 | 14.76 |
+| text / surface | 15.16 | 12.95 |
+| muted / bg | 6.40 | 7.75 |
+| muted / surface | 5.86 | 6.80 |
+| accent / bg (selected label, Cancel) | 6.70 | 8.44 |
+| accent / surface | 6.14 | 7.41 |
+| on-accent / accent (primary button) | 6.70 | 8.88 |
+| border-ui / bg (control outline) | 3.84 | 4.31 |
+| border-ui / surface | 3.52 | 3.78 |
+| danger / danger-bg (glyph, title) | 5.95 | 7.30 |
+| banner text / banner bg | 10.23 | 10.26 |
+Discoverability follow-up: the 1.0.0 refresh icon (muted, no fill) was easy to miss. It now uses the full text
+colour (15.16 light / 12.95 dark on surface) in a 32x32 button with a resting surface fill, a stronger hover fill
+plus a 3:1+ outline (border-ui), the standard focus ring, and the title/aria-label "Summarize again". Copy keeps
+the ghost style but uses full text colour (medium weight), with a surface fill and outline on hover. No tokens
+changed, so the table above stands. The skeleton (1.24) is decorative and aria-hidden.
+
+Verified with Playwright (headless Chromium) at 320/420/600, light/dark, RTL (dir=rtl) and forced-colors
+emulation; no horizontal overflow at 320. Not verified: a real side panel in Chrome, real screen readers.
+
+Tab-switch race (fixed): `onActivated` now records the last tab the user activated during a run; after the text is
+read, the banner stays up when that tab is not the one the run read (`shouldStayStale`, unit-tested) instead of
+being cleared. Unreadable blank tabs: right after a toolbar click (`afterClick`), a no-grant failure on a tab with
+an empty or about: URL shows the neutral "Chrome doesn't let extensions read this kind of page" message; without a
+click, or on real http(s) tabs, the no-grant message is unchanged.

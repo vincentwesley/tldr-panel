@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { classifyPage, chooseTab, extractFromTab, errorText, MSG, PageError } from '../../src/lib/page.js';
+import { shouldStayStale, classifyPage, chooseTab, extractFromTab, errorText, MSG, PageError } from '../../src/lib/page.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -121,5 +121,37 @@ describe('chooseTab', () => {
     const tab = await chooseTab({ stale: true, currentTabId: 1 }, d);
     await expect(extractFromTab(tab)).rejects.toMatchObject({ code: 'no-grant', message: MSG.noGrant });
     expect(executeScript.mock.calls.every(([a]) => a.target.tabId === 2)).toBe(true);
+  });
+});
+
+describe('shouldStayStale (tab switched during a run)', () => {
+  it('no tab activation during the run -> not stale', () => {
+    expect(shouldStayStale({ runTabId: 1, activatedTabId: null })).toBe(false);
+  });
+  it('a different tab was activated -> the banner stays', () => {
+    expect(shouldStayStale({ runTabId: 1, activatedTabId: 2 })).toBe(true);
+  });
+  it('the user came back to the run tab -> not stale', () => {
+    expect(shouldStayStale({ runTabId: 1, activatedTabId: 1 })).toBe(false);
+  });
+  it('unknown run tab -> not stale', () => {
+    expect(shouldStayStale({ runTabId: null, activatedTabId: 2 })).toBe(false);
+  });
+});
+
+describe('extractFromTab after a toolbar click on an unreadable tab', () => {
+  const failing = () =>
+    vi.stubGlobal('chrome', { scripting: { executeScript: vi.fn().mockRejectedValue(new Error('Cannot access contents of the page. Extension manifest must request permission')) } });
+  it('empty url + no grant right after a click -> neutral internal message', async () => {
+    failing();
+    await expect(extractFromTab({ id: 1, url: '' }, { afterClick: true })).rejects.toMatchObject({ code: 'internal', message: MSG.internal });
+  });
+  it('same failure without a click stays the no-grant message', async () => {
+    failing();
+    await expect(extractFromTab({ id: 1, url: '' })).rejects.toMatchObject({ code: 'no-grant' });
+  });
+  it('a real http tab with no grant after a click keeps the no-grant message', async () => {
+    failing();
+    await expect(extractFromTab({ id: 1, url: 'https://example.com/' }, { afterClick: true })).rejects.toMatchObject({ code: 'no-grant' });
   });
 });
