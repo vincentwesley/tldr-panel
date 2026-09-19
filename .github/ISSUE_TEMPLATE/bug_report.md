@@ -3,6 +3,7 @@ name: Bug report
 about: Something is broken
 labels: bug
 ---
+<!-- Repo: https://github.com/vincentwesley/tldr-panel -->
 
 **What happened?**
 

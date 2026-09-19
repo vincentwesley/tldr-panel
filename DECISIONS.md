@@ -54,8 +54,8 @@ Each decision, its rationale, and what could not be verified.
   IIFE bundling `@mozilla/readability`), then call it. Both run in the same isolated world.
 - **Readability first, body text fallback**, on a cloned document. Text is rebuilt from Readability's
   HTML so blank-line paragraph breaks (and single newlines between list items) survive, which lets the
-  chunker split on paragraphs. Under 200 chars falls back to `body.innerText`. Text is capped at 500,000
-  characters and `truncated` is surfaced as a note. Pages with more than 2,000,000 characters of raw text
+  chunker split on paragraphs. Under 200 chars falls back to `body.innerText`. Text is capped at 120,000
+  characters (`MAX_CHARS` in `src/lib/extract.js`) and `truncated` is surfaced as a note. Pages with more than 2,000,000 characters of raw text
   skip Readability (cloning and parsing that DOM is slow) and use sliced body text.
 - **Errors** (`src/lib/page.js`): `executeScript` failures are read from rejections and from
   `result[].error`. Internal pages, PDFs (only by URL or content type), empty pages, `file:` URLs and
@@ -74,6 +74,18 @@ Each decision, its rationale, and what could not be verified.
 - Guards: quota must be finite and > 0; chunks below 100 chars, more than 60 chunks in one pass, or more
   than 150 chunk calls in a run fail with `TooLongError` ("This page is too long to summarize on-device")
   before hammering the model. `QuotaExceededError` retries clamp the split ratio to [0.1, 0.5].
+
+- **Very long pages are truncated at 120,000 characters** (was 500,000). Real on-device measurements:
+  about 65 s per chunk (60-170 s seen), so 100k chars = 4 chunks = about 4.7 min; a 250k-char page ran
+  over 800 s without finishing. Chunked summaries of long pages can take a few minutes; the progress text
+  says so ("Part 2 of 4 - long pages can take a few minutes").
+- **Stale panel targets the active tab.** When the panel is stale, style/detail changes and "Summarize
+  again" read the ACTIVE tab (`chooseTab` in `src/lib/page.js`), never the old page. Without an activeTab
+  grant it shows the no-grant message and keeps the banner. The banner clears only after a fresh read.
+- **Service worker** calls `sidePanel.setPanelBehavior({openPanelOnActionClick:false})` at top level on every
+  start (the setting persists in the browser profile), with errors caught.
+- **Known gap: about:blank and similar.** Without a grant `tab.url` is hidden, so "no grant" and "URL
+  unreadable" look the same; both show the no-grant message. Not cleanly distinguishable, left as is.
 
 ## Build, icons, tooling
 

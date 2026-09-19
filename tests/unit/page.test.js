@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { classifyPage, extractFromTab, errorText, MSG, PageError } from '../../src/lib/page.js';
+import { classifyPage, chooseTab, extractFromTab, errorText, MSG, PageError } from '../../src/lib/page.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -86,5 +86,40 @@ describe('extractFromTab', () => {
     await expect(extractFromTab(undefined)).rejects.toMatchObject({ code: 'no-grant' });
     await expect(extractFromTab({ id: 1, url: 'chrome://settings' })).rejects.toMatchObject({ code: 'internal' });
     expect(ex).not.toHaveBeenCalled();
+  });
+});
+
+describe('chooseTab', () => {
+  const mk = () => ({
+    getTab: vi.fn(async (id) => ({ id, url: 'https://old.example/' })),
+    getActive: vi.fn(async () => ({ id: 2 })),
+  });
+  it('explicit tab id wins', async () => {
+    const d = mk();
+    expect((await chooseTab({ tabId: 9, stale: true, currentTabId: 1 }, d)).id).toBe(9);
+  });
+  it('not stale -> the current tab', async () => {
+    const d = mk();
+    expect((await chooseTab({ stale: false, currentTabId: 1 }, d)).id).toBe(1);
+    expect(d.getActive).not.toHaveBeenCalled();
+  });
+  it('stale -> the active tab, not the old one', async () => {
+    const d = mk();
+    expect((await chooseTab({ stale: true, currentTabId: 1 }, d)).id).toBe(2);
+    expect(d.getTab).not.toHaveBeenCalled();
+  });
+  it('closed current tab falls back to the active tab', async () => {
+    const d = mk();
+    d.getTab.mockRejectedValue(new Error('No tab'));
+    expect((await chooseTab({ stale: false, currentTabId: 1 }, d)).id).toBe(2);
+  });
+  it('stale + active tab without grant -> no-grant message and the old page is never read', async () => {
+    const d = mk();
+    d.getActive.mockResolvedValue({ id: 2 }); // no url: activeTab not granted
+    const executeScript = vi.fn().mockRejectedValue(new Error('Cannot access contents of the page. Extension manifest must request permission'));
+    vi.stubGlobal('chrome', { scripting: { executeScript } });
+    const tab = await chooseTab({ stale: true, currentTabId: 1 }, d);
+    await expect(extractFromTab(tab)).rejects.toMatchObject({ code: 'no-grant', message: MSG.noGrant });
+    expect(executeScript.mock.calls.every(([a]) => a.target.tabId === 2)).toBe(true);
   });
 });

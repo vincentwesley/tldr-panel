@@ -60,6 +60,23 @@ export async function getTargetTab() {
   return tab;
 }
 
+/**
+ * Which tab should a run read? An explicit id (toolbar click) wins. Otherwise, if the panel is NOT stale the
+ * tab it is already showing; if it IS stale (user switched tabs / navigated) or that tab is gone, the ACTIVE
+ * tab, never the old page. `stale` must be the value from before the run reset any UI state.
+ */
+export async function chooseTab({ tabId = null, stale = false, currentTabId = null }, { getTab, getActive }) {
+  if (tabId != null) return getTab(tabId);
+  if (!stale && currentTabId != null) {
+    try {
+      return await getTab(currentTabId);
+    } catch {
+      /* tab closed: fall through to the active tab */
+    }
+  }
+  return getActive();
+}
+
 export async function extractFromTab(tab) {
   if (!tab || tab.id == null) throw new PageError(MSG.noGrant, 'no-grant');
   const early = classifyPage({ url: tab.url });

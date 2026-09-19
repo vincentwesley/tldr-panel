@@ -6,6 +6,14 @@
   "type": "module",
   "author": "vincentwesley",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vincentwesley/tldr-panel.git"
+  },
+  "homepage": "https://github.com/vincentwesley/tldr-panel#readme",
+  "bugs": {
+    "url": "https://github.com/vincentwesley/tldr-panel/issues"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",

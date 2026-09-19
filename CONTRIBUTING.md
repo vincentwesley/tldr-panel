@@ -13,6 +13,8 @@ npm run lint
 
 Requires Node 20+. No frameworks: the panel is vanilla ES modules bundled with esbuild.
 
+Repository: <https://github.com/vincentwesley/tldr-panel> (issues: <https://github.com/vincentwesley/tldr-panel/issues>).
+
 ## Guidelines
 
 - Keep it small. No runtime dependencies beyond `@mozilla/readability`.

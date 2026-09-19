@@ -17,7 +17,7 @@ const shots = path.join(root, 'docs', 'screenshots');
 const raw = path.join(shots, 'raw');
 fs.mkdirSync(raw, { recursive: true });
 
-const article = fs.readFileSync(path.join(root, 'tests/e2e/fixtures/article.html'));
+const article = fs.readFileSync(path.join(root, 'tests/e2e/fixtures/screenshot-article.html'));
 const server = http.createServer((_q, res) => {
   res.writeHead(200, { 'content-type': 'text/html' });
   res.end(article);

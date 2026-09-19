@@ -31,6 +31,18 @@ Summaries are English only and are AI output, so they can be wrong.
 - At least 22 GB of free disk space
 - A GPU with more than 4 GB VRAM, or 16 GB RAM and 4+ CPU cores
 
+## Known limitations
+
+- Needs supported hardware and about 22 GB of free disk space (see Requirements).
+- The first-time model download took about 7 minutes in testing.
+- English only.
+- PDFs, `chrome://` pages and the Chrome Web Store are unsupported.
+- Very long pages are truncated at 120,000 characters, and chunked summaries of long pages are slow:
+  about 65 s per chunk on-device (100k characters = 4 chunks, roughly 4.7 minutes).
+- The Alt+Shift+S shortcut is registered but not covered by automated tests.
+- The real clipboard write can only be tested manually.
+- Tested on Windows with Chrome 153 only.
+
 ## Permissions explained
 
 | Permission | Why |
@@ -56,7 +68,8 @@ node scripts/screenshots.mjs   # regenerate docs/screenshots (after build --e2e)
 ```
 
 Load `dist/` at `chrome://extensions` with Developer mode on. See [CONTRIBUTING.md](CONTRIBUTING.md)
-and [DECISIONS.md](DECISIONS.md).
+and [DECISIONS.md](DECISIONS.md). Report bugs at
+<https://github.com/vincentwesley/tldr-panel/issues>. Source: <https://github.com/vincentwesley/tldr-panel>.
 
 ## License
 

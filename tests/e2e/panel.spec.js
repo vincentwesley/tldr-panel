@@ -216,7 +216,7 @@ test.describe('with fake Summarizer (e2e build)', () => {
     const { panel } = await openPanel(h, { scenario: 'bigquota', fixture: '/long' });
     await expect(resultLis(panel)).toHaveCount(3, { timeout: 30000 });
     await expect(panel.locator('#result-note')).toHaveText('This page is very long; only the first part was summarized.');
-    expect((await fakeCalls(panel)).stream[0].len).toBeLessThanOrEqual(500000);
+    expect((await fakeCalls(panel)).stream[0].len).toBeLessThanOrEqual(120000);
   });
 
   test('model error shows a friendly red error, never the raw message', async () => {

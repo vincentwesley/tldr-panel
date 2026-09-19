@@ -2,9 +2,9 @@
 import { Readability, isProbablyReaderable } from '@mozilla/readability';
 
 export const MIN_ARTICLE_CHARS = 200;
-export const MAX_CHARS = 500000;
+export const MAX_CHARS = 120000;
 /** Above this much raw text we skip Readability (cloning + parsing a giant DOM is slow) and just slice body text. */
-export const PARSE_LIMIT_CHARS = MAX_CHARS * 4;
+export const PARSE_LIMIT_CHARS = 2000000;
 
 const clean = (s) =>
   String(s || '')

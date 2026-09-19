@@ -2,7 +2,7 @@ import * as adapter from './lib/summarizer.js';
 import { summarizeLong } from './lib/pipeline.js';
 import { consumeStream } from './lib/stream.js';
 import { renderMarkdown, toPlainText } from './lib/markdown.js';
-import { getTargetTab, extractFromTab, PageError, MSG } from './lib/page.js';
+import { getTargetTab, chooseTab, extractFromTab, PageError, MSG } from './lib/page.js';
 import { createActivationListener } from './lib/activation.js';
 
 const $ = (id) => document.getElementById(id);
@@ -209,17 +209,8 @@ function newController() {
   return controller.signal;
 }
 
-async function resolveTab(tabId) {
-  if (tabId != null) return chrome.tabs.get(tabId);
-  if (!stale && currentTabId != null) {
-    try {
-      return await chrome.tabs.get(currentTabId);
-    } catch {
-      /* tab closed: fall through to the active tab */
-    }
-  }
-  return getTargetTab();
-}
+const resolveTab = (tabId, wasStale) =>
+  chooseTab({ tabId, stale: wasStale, currentTabId }, { getTab: (id) => chrome.tabs.get(id), getActive: getTargetTab });
 
 // ---------- main flow ----------
 async function run({ tabId = null, reextract = true } = {}) {
@@ -231,8 +222,7 @@ async function run({ tabId = null, reextract = true } = {}) {
   $('result').replaceChildren();
   setNote();
   setStatus('');
-  setStale(false);
-  navigated = false;
+  const wasStale = stale; // the banner stays up until a fresh page was actually read
   setTitle('');
   setBusy(true);
   show('loading');
@@ -246,7 +236,7 @@ async function run({ tabId = null, reextract = true } = {}) {
       return;
     }
     if (reextract || !page) {
-      const tab = await resolveTab(tabId);
+      const tab = await resolveTab(tabId, wasStale);
       if (id !== runId) return;
       currentTabId = tab?.id ?? null;
       let fresh;
@@ -259,6 +249,8 @@ async function run({ tabId = null, reextract = true } = {}) {
       if (id !== runId) return; // a newer run owns `page`
       page = fresh;
     }
+    navigated = false;
+    setStale(false);
     setTitle(page.title || page.url || '');
     if (availability === 'downloadable' || availability === 'downloading') {
       showDownload(availability);
@@ -365,7 +357,7 @@ async function summarizePage(signal, id, preCreated) {
           setNote(truncatedNote);
           show('loading', 'result');
         } else {
-          setLoading(`Summarizing part ${p.index} of ${p.total}...`);
+          setLoading(`Part ${p.index} of ${p.total} - long pages can take a few minutes`);
           show('loading');
         }
       },

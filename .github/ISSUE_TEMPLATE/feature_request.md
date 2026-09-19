@@ -3,6 +3,7 @@ name: Feature request
 about: Suggest an improvement
 labels: enhancement
 ---
+<!-- Repo: https://github.com/vincentwesley/tldr-panel -->
 
 **What problem would this solve?**
 

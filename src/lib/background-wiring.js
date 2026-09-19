@@ -8,7 +8,11 @@ export const ACTIVATED = 'tldr:activated';
  */
 export function registerBackground(chromeApi) {
   // Persisted browser-side: make sure an older install that enabled it does not swallow onClicked.
-  Promise.resolve(chromeApi.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })).catch(() => {});
+  try {
+    Promise.resolve(chromeApi.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })).catch(() => {});
+  } catch {
+    /* API missing or threw synchronously: nothing else to do */
+  }
 
   chromeApi.action.onClicked.addListener((tab) => {
     // No await before open(): the user gesture would be lost.
