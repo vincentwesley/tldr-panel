@@ -1,9 +1,13 @@
 # Changelog
 
-## 1.0.1 (unreleased): UI polish
+## 1.0.1: UI polish
 
 - Cleaner, calmer side panel: design tokens, sticky top bar with refresh, page title subtitle, quieter Style/Detail controls, larger reading text, ghost Copy with "Copied" feedback, skeleton loading, glyphs on state cards, slim stale notice, low-key footer.
-- No behaviour, permission or accessibility changes. Store screenshots regenerated (result images now use the e2e fake text).
+- The refresh button is now clearly visible (full-contrast icon, 32px target, hover/focus fill, "Summarize again" tooltip) and Copy is more prominent.
+- Fixed a low-severity race: switching tabs while a run was reading the page no longer clears the "You switched pages" banner.
+- A blank or otherwise unreadable tab right after a toolbar click now shows the neutral "Chrome doesn't let extensions read this kind of page" message.
+- Store screenshots regenerated with the new UI (result images use real on-device model output).
+- No permission changes.
 
 ## Unreleased (post-review fixes)
 

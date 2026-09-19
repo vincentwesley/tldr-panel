@@ -123,7 +123,7 @@ Each decision, its rationale, and what could not be verified.
   second sender cannot be simulated in Playwright.
 - **Real Chrome 153 + real model (Puppeteer, this round):** the panel from `dist-e2e` (identical code to
   `dist`, reached via `?tabId=`) extracted the fixture article and produced real streamed summaries in
-  light and dark with the final CSP. (The store result screenshots were later regenerated with the fake text after the UI redesign; see Screenshots.)
+  light and dark with the final CSP. (The store result screenshots were regenerated with real output again for 1.0.1; see Screenshots.)
 - **NOT verified this round (honest gaps):**
   - The shipped `dist/` with a real toolbar click producing an activeTab grant, and a click on a second
     tab re-summarizing while the panel is open. An OS-level attempt (SendKeys Alt+Shift+S) opened the
@@ -135,7 +135,7 @@ Each decision, its rationale, and what could not be verified.
   - Real clipboard copy (e2e stubs `navigator.clipboard`), real background download continuation after
     cancel, macOS/Linux, non-English pages, PDFs in the real viewer, Web Store pages.
 - **Screenshots** (`node scripts/screenshots.mjs`, needs `build --e2e`): 1280x800 with the fixture article
-  and the panel at 420px. Result screenshots use the e2e fake's text since the 1.0.1 UI redesign (the earlier real-model captures show the old layout and are kept only as gitignored `raw/old-ui-real-result-*`); the download and unavailable states come from the e2e fake (they cannot be produced on this machine, as
+  and the panel at 420px. The two result screenshots use REAL Gemini Nano output with the 1.0.1 UI: real Chrome 153 driven by Puppeteer (throwaway profile copy holding the downloaded model, `triggerAction` on the fixture article, default Summary/Standard), panel captured at 420x800 in light and dark (gitignored `raw/real-result-{light,dark}.png`, which `scripts/screenshots.mjs` composites next to the page); the download and unavailable states come from the e2e fake (they cannot be produced on this machine, as
   the model is installed). Only the fixture page and the panel are captured, no browser chrome.
 
 ## UI polish pass (1.0.1)
@@ -179,8 +179,17 @@ Contrast (WCAG 2.x, computed from the tokens; text needs 4.5, UI boundaries 3):
 | border-ui / surface | 3.52 | 3.78 |
 | danger / danger-bg (glyph, title) | 5.95 | 7.30 |
 | banner text / banner bg | 10.23 | 10.26 |
-The ghost Copy and refresh buttons have no outline; their icon and label are muted (5.86+) and gain a surface
-fill on hover. The skeleton (1.24) is decorative and aria-hidden.
+Discoverability follow-up: the 1.0.0 refresh icon (muted, no fill) was easy to miss. It now uses the full text
+colour (15.16 light / 12.95 dark on surface) in a 32x32 button with a resting surface fill, a stronger hover fill
+plus a 3:1+ outline (border-ui), the standard focus ring, and the title/aria-label "Summarize again". Copy keeps
+the ghost style but uses full text colour (medium weight), with a surface fill and outline on hover. No tokens
+changed, so the table above stands. The skeleton (1.24) is decorative and aria-hidden.
 
 Verified with Playwright (headless Chromium) at 320/420/600, light/dark, RTL (dir=rtl) and forced-colors
 emulation; no horizontal overflow at 320. Not verified: a real side panel in Chrome, real screen readers.
+
+Tab-switch race (fixed): `onActivated` now records the last tab the user activated during a run; after the text is
+read, the banner stays up when that tab is not the one the run read (`shouldStayStale`, unit-tested) instead of
+being cleared. Unreadable blank tabs: right after a toolbar click (`afterClick`), a no-grant failure on a tab with
+an empty or about: URL shows the neutral "Chrome doesn't let extensions read this kind of page" message; without a
+click, or on real http(s) tabs, the no-grant message is unchanged.

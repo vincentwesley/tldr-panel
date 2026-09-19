@@ -42,7 +42,6 @@ Summaries are English only and are AI output, so they can be wrong.
 - The Alt+Shift+S shortcut is registered but not covered by automated tests.
 - The real clipboard write can only be tested manually.
 - Tested on Windows with Chrome 153 only.
-- Low-severity race: if you switch tabs during the brief text-reading phase of a run, the status banner can clear while the result belongs to the tab where the run began. The window is narrow.
 
 ## Permissions explained
 

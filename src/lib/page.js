@@ -77,7 +77,19 @@ export async function chooseTab({ tabId = null, stale = false, currentTabId = nu
   return getActive();
 }
 
-export async function extractFromTab(tab) {
+/**
+ * After a run's text was read: should the "you switched pages" banner stay up? True when the user activated a
+ * different tab than the one the run read while it was in flight (the result belongs to the older tab).
+ */
+export function shouldStayStale({ runTabId, activatedTabId }) {
+  return activatedTabId != null && runTabId != null && activatedTabId !== runTabId;
+}
+
+/**
+ * `afterClick`: this run was started by a toolbar click on this tab. Chrome then always grants activeTab, so a
+ * no-grant failure on a tab with no readable URL (about:blank and similar) is really an unreadable page.
+ */
+export async function extractFromTab(tab, { afterClick = false } = {}) {
   if (!tab || tab.id == null) throw new PageError(MSG.noGrant, 'no-grant');
   const early = classifyPage({ url: tab.url });
   if (early) throw early;
@@ -92,7 +104,9 @@ export async function extractFromTab(tab) {
     if (res?.error) throw res.error;
     result = res?.result;
   } catch (e) {
-    throw classifyPage({ url: tab.url, errorMessage: errorText(e) || 'unknown', contentType: undefined });
+    const err = classifyPage({ url: tab.url, errorMessage: errorText(e) || 'unknown', contentType: undefined });
+    if (afterClick && err.code === 'no-grant' && (!tab.url || /^about:/i.test(tab.url))) throw new PageError(MSG.internal, 'internal');
+    throw err;
   }
   if (!result) throw new PageError(MSG.generic, 'other');
   const pdf = classifyPage({ contentType: result.contentType });

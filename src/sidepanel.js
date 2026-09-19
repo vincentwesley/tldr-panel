@@ -2,7 +2,7 @@ import * as adapter from './lib/summarizer.js';
 import { summarizeLong } from './lib/pipeline.js';
 import { consumeStream } from './lib/stream.js';
 import { renderMarkdown, toPlainText } from './lib/markdown.js';
-import { getTargetTab, chooseTab, extractFromTab, PageError, MSG } from './lib/page.js';
+import { getTargetTab, chooseTab, extractFromTab, shouldStayStale, PageError, MSG } from './lib/page.js';
 import { createActivationListener } from './lib/activation.js';
 
 const $ = (id) => document.getElementById(id);
@@ -21,6 +21,7 @@ let ownTabId = null; // set only when the panel is open as a normal tab (tests)
 let panelWindowId = null;
 let stale = false; // user switched tabs / the tab navigated since the last extraction
 let navigated = false;
+let activatedTabId = null; // last tab the user activated in this window since the current run began
 let lastText = '';
 let controller = null;
 let runId = 0;
@@ -226,6 +227,7 @@ async function run({ tabId = null, reextract = true } = {}) {
   $('result').replaceChildren();
   setNote();
   setStatus('');
+  activatedTabId = null;
   const wasStale = stale; // the banner stays up until a fresh page was actually read
   setTitle('');
   setBusy(true);
@@ -245,7 +247,7 @@ async function run({ tabId = null, reextract = true } = {}) {
       currentTabId = tab?.id ?? null;
       let fresh;
       try {
-        fresh = await extractFromTab(tab);
+        fresh = await extractFromTab(tab, { afterClick: tabId != null });
       } catch (e) {
         if (id === runId) page = null; // never summarize a stale page after a failed re-extraction
         throw e;
@@ -254,7 +256,8 @@ async function run({ tabId = null, reextract = true } = {}) {
       page = fresh;
     }
     navigated = false;
-    setStale(false);
+    // The user may have switched tabs while the text was being read: keep the banner up in that case.
+    setStale(shouldStayStale({ runTabId: currentTabId, activatedTabId }));
     setTitle(page.title || page.url || '');
     if (availability === 'downloadable' || availability === 'downloading') {
       showDownload(availability);
@@ -413,8 +416,10 @@ async function initTabTracking() {
     /* not fatal */
   }
   chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
-    if (tabId === ownTabId || currentTabId == null) return;
+    if (tabId === ownTabId) return;
     if (panelWindowId != null && windowId !== panelWindowId) return;
+    activatedTabId = tabId;
+    if (currentTabId == null) return;
     if (tabId !== currentTabId) setStale(true);
     else if (!navigated) setStale(false);
   });

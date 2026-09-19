@@ -177,10 +177,13 @@ button[aria-disabled="true"] { opacity: 0.55; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 button.link-btn { border-color: transparent; background: transparent; color: var(--accent); padding-inline: var(--s2); }
 button.link-btn:hover { border-color: transparent; text-decoration: underline; }
-button.ghost, button.icon-btn { border-color: transparent; background: transparent; color: var(--muted); }
-button.ghost:hover, button.icon-btn:hover { border-color: transparent; background: var(--surface); color: var(--text); }
+button.ghost, button.icon-btn { border-color: transparent; background: transparent; color: var(--text); }
+button.ghost:hover, button.icon-btn:hover { border-color: var(--border-ui); background: var(--surface); color: var(--text); }
+button.icon-btn:hover { background: var(--border); }
+button.ghost:active, button.icon-btn:active { background: var(--border); }
+button.ghost { font-weight: 500; }
 button.ghost { margin-inline-start: calc(var(--s2) * -1); }
-button.icon-btn { width: var(--target); padding: 0; flex: none; margin-inline-end: calc(var(--s2) * -1); }
+button.icon-btn { width: var(--target); height: var(--target); padding: 0; flex: none; margin-inline-end: calc(var(--s2) * -1); background: var(--surface); }
 button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .i-check { display: none; }
 #copy-btn[data-state="done"] { color: var(--accent); }
