@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TL;DR Panel</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <h1>TL;DR Panel</h1>
+    <p id="page-title" class="page-title"></p>
+  </header>
+
+  <form id="controls" class="controls" aria-label="Summary options">
+    <fieldset class="segmented">
+      <legend>Style</legend>
+      <label><input type="radio" name="type" value="tldr" checked><span>TL;DR</span></label>
+      <label><input type="radio" name="type" value="key-points"><span>Key points</span></label>
+      <label><input type="radio" name="type" value="teaser"><span>Teaser</span></label>
+      <label><input type="radio" name="type" value="headline"><span>Headline</span></label>
+    </fieldset>
+    <fieldset class="segmented">
+      <legend>Length</legend>
+      <label><input type="radio" name="length" value="short"><span>Short</span></label>
+      <label><input type="radio" name="length" value="medium" checked><span>Medium</span></label>
+      <label><input type="radio" name="length" value="long"><span>Long</span></label>
+    </fieldset>
+  </form>
+
+  <main>
+    <section id="state-loading" class="state" hidden>
+      <p id="loading-text" role="status">Reading page...</p>
+      <div class="spinner" aria-hidden="true"></div>
+    </section>
+
+    <section id="state-download" class="state" hidden>
+      <h2>On-device model needed</h2>
+      <p>Chrome needs to download its built-in summarization model once (several GB). It stays on your computer and nothing about the page is sent anywhere.</p>
+      <button id="download-btn" type="button" class="primary">Download on-device model</button>
+      <div id="download-progress-wrap" hidden>
+        <progress id="download-progress" max="100" value="0" aria-label="Model download progress"></progress>
+        <p id="download-progress-text" role="status">0%</p>
+      </div>
+    </section>
+
+    <section id="state-unavailable" class="state" hidden>
+      <h2 id="unavailable-title">Summarizer not available</h2>
+      <p id="unavailable-text"></p>
+      <p>Chrome's built-in Summarizer needs:</p>
+      <ul class="requirements">
+        <li>Desktop Chrome 138 or newer (Windows, macOS, Linux, ChromeOS)</li>
+        <li>About 22 GB of free disk space for the model</li>
+        <li>A GPU with more than 4 GB of VRAM, or 16 GB of RAM and 4 or more CPU cores</li>
+        <li>An unmetered network connection for the first download</li>
+      </ul>
+    </section>
+
+    <section id="state-error" class="state" hidden>
+      <h2>Something went wrong</h2>
+      <p id="error-text" role="alert"></p>
+    </section>
+
+    <section id="state-result" class="state" hidden>
+      <div id="result" class="result" aria-live="polite" aria-busy="false"></div>
+    </section>
+  </main>
+
+  <footer class="actions">
+    <button id="again-btn" type="button">Summarize again</button>
+    <button id="copy-btn" type="button" hidden>Copy</button>
+    <button id="cancel-btn" type="button" hidden>Cancel</button>
+    <span id="copy-status" class="sr-only" role="status"></span>
+  </footer>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
