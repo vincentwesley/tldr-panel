@@ -199,11 +199,11 @@ test.describe('shipped build (no host permissions)', () => {
     await expect(panel.locator('#error-text')).toHaveText('Click the TL;DR Panel toolbar icon on this tab to summarize it.');
   });
 
-  test('opened on an extension page it explains it cannot read it', async () => {
+  test('opened with no target tab (own extension page) it does not crash and asks for a click', async () => {
     const page = await h.ctx.newPage();
     await page.addInitScript(installFake, 'success');
     await page.goto(`chrome-extension://${h.extId}/sidepanel.html`);
-    await expect(page.locator('#error-text')).toContainText("doesn't let extensions read");
+    await expect(page.locator('#error-text')).toContainText('toolbar icon');
   });
 
   test('service worker registers openPanelOnActionClick', async () => {
