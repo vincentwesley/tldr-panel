@@ -7,13 +7,11 @@ import path from 'node:path';
 const outDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/icons');
 const SS = 4; // supersampling factor
 
-// 5x7 bitmap font for the glyphs we need.
+// Bold 7-row bitmap glyphs (2-3 cell strokes) for the 48/128px icons.
 const FONT = {
-  T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
-  L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
-  ';': ['000', '000', '010', '010', '000', '010', '100'],
-  D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
-  R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  T: ['1111111', '1111111', '0011100', '0011100', '0011100', '0011100', '0011100'],
+  L: ['1110000', '1110000', '1110000', '1110000', '1110000', '1111111', '1111111'],
+  ';': ['11', '11', '00', '00', '11', '11', '10'],
 };
 
 function insideRoundRect(x, y, size, r) {
@@ -23,32 +21,33 @@ function insideRoundRect(x, y, size, r) {
 }
 
 // Returns a function (x,y in 0..size) -> [r,g,b,a] or null for "no ink" on top of the base.
+// One motif at every size: a bold "TL" (plus ";" from 48px up) in white on the panel accent blue.
 function makeShape(size) {
   const r = size * 0.22;
-  const bg = [67, 56, 202]; // indigo, reads on both light and dark toolbars
+  const bg = [29, 78, 216]; // #1d4ed8, same as the panel accent
   const fg = [255, 255, 255];
-  const ring = size * 0.045;
+  const stroke = [138, 180, 248]; // #8ab4f8, lighter inner stroke so the tile reads on dark toolbars
+  const ring = Math.max(1, size * 0.03);
   const marks = []; // rects in size units
   if (size >= 48) {
-    const cols = 27;
-    const cell = (size * 0.8) / cols;
+    const cols = 18; // T(7) gap L(7) gap ;(2)
+    const cell = (size * 0.7) / cols;
     const x0 = (size - cell * cols) / 2;
     const y0 = (size - cell * 7) / 2;
     let cx = x0;
-    for (const ch of 'TL;DR') {
+    for (const ch of 'TL;') {
       const g = FONT[ch];
       g.forEach((row, ry) => [...row].forEach((v, rx) => v === '1' && marks.push([cx + rx * cell, y0 + ry * cell, cell, cell])));
       cx += (g[0].length + 1) * cell;
     }
   } else {
-    // 16px: text is illegible, draw a "summary lines" glyph instead.
-    const w = size;
-    marks.push([w * 0.2, w * 0.24, w * 0.6, w * 0.15], [w * 0.2, w * 0.46, w * 0.6, w * 0.15], [w * 0.2, w * 0.68, w * 0.36, w * 0.15]);
+    // 16px: pixel-aligned 2px-stroke "TL" so it stays crisp.
+    marks.push([2, 4, 6, 2], [4, 4, 2, 9], [9, 4, 2, 9], [9, 11, 5, 2]);
   }
   return (x, y) => {
     if (!insideRoundRect(x, y, size, r)) return null;
     for (const [mx, my, mw, mh] of marks) if (x >= mx && x < mx + mw && y >= my && y < my + mh) return [...fg, 255];
-    if (!insideRoundRect(x, y, size, r) || !insideRoundRect(x - ring, y - ring, size - 2 * ring, r - ring) ) return [165, 180, 252, 255];
+    if (!insideRoundRect(x - ring, y - ring, size - 2 * ring, r - ring)) return [...stroke, 255];
     return [...bg, 255];
   };
 }
