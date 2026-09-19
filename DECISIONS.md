@@ -5,92 +5,124 @@ Each decision, its rationale, and what could not be verified.
 ## Product and API
 
 - **Summarizer runs in the side panel page.** The Summarizer API is unavailable in workers and
-  service workers, so the top-level extension page hosts it. The service worker only calls
-  `sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
-- **Global `Summarizer`, not `navigator.ai`.** `availability()` is checked first. A missing
-  global is reported separately from `unavailable`.
-- **`outputLanguage: 'en'` and `expectedInputLanguages: ['en']` always passed.** Chrome warns
-  and may degrade output otherwise. `NotSupportedError` is shown as a language message.
-- **Markdown output format for every type.** Rendered by a tiny DOM-node renderer
-  (`src/lib/markdown.js`): paragraphs, `-`/`*` bullets, `**bold**`. No `innerHTML`, no links,
-  no images, so model output and page text are inert.
-- **Streaming chunk handling.** Chrome builds emit either deltas or cumulative text.
-  `mergeChunk` treats a chunk that starts with the accumulated text as cumulative. Known
-  ambiguity: a delta that repeats the whole accumulated prefix would be misread; considered
-  negligible.
-- **Download button.** `Summarizer.create()` needs transient user activation when the model
-  is `downloadable`/`downloading`, so the button click handler calls `create()` before any
-  `await`. Progress uses `e.loaded` as a 0-1 fraction.
+  service workers, so the top-level extension page hosts it. The service worker only opens the panel
+  and notifies it (see "Opening the panel and activeTab").
+- **Global `Summarizer`, not `navigator.ai`.** `availability()` is checked first. A missing global is
+  reported separately from `unavailable`.
+- **`outputLanguage: 'en'` and `expectedInputLanguages: ['en']` always passed.** Chrome warns and may
+  degrade output otherwise. The UI says "Summaries are in English."
+- **Markdown output format for every type**, rendered by a DOM-node renderer (`src/lib/markdown.js`):
+  paragraphs, `-`/`*` bullets, numbered lists, `#` headings (shown as bold paragraphs), wrapped list
+  items, `**bold**`. No `innerHTML`, no links, no images, so model output and page text are inert.
+  Copy puts plain text on the clipboard (`toPlainText`).
+- **Streaming chunks are deltas (verified in Chrome 153).** `mergeChunk` defaults to delta and only
+  concludes "cumulative" when a later chunk is longer than and starts with an already substantial
+  accumulated text (>= 8 chars); the decision is sticky. Known limitation: a cumulative stream whose
+  first chunk is shorter than 8 characters would be misread as deltas (not observed in practice).
+- **Download button.** `Summarizer.create()` needs transient user activation when the model is
+  `downloadable`/`downloading`, so the click handler calls `create()` before any `await`. The card copy
+  deliberately states no model size (unverified); "about 7 minutes on a fast connection" and "about 22 GB
+  of free disk space" are from our test and Chrome's documented requirement.
+- **Cancelling the download** aborts `create()` via its signal and returns to the neutral download card.
+  Whether Chrome keeps downloading in the background after an abort was not verified.
 - **Summarizer lifecycle.** A summarizer is created per run and destroyed in `finally`.
-  Changing style/length re-summarizes with cached page text.
+
+## Opening the panel and activeTab (the core bug)
+
+- **Verified in real Chrome 153:** `sidePanel.setPanelBehavior({openPanelOnActionClick: true})` opens the
+  panel on a toolbar click but does NOT grant `activeTab`, so extraction failed. A control build using
+  `action.onClicked` -> `sidePanel.open({tabId})` did get the grant and worked end to end with the real
+  model. The earlier claim in this file that "a click is enough" was wrong for `openPanelOnActionClick`.
+- `background.js` now calls `sidePanel.setPanelBehavior({openPanelOnActionClick:false})` (the setting
+  persists in the browser, so an older install must not swallow `onClicked`) and registers
+  `action.onClicked`. The listener calls `sidePanel.open({tabId})` synchronously (no `await` before it,
+  or the user gesture is lost), then `runtime.sendMessage({type:'tldr:activated', tabId})`, ignoring "no
+  receiver" errors. `_execute_action` (Alt+Shift+S) fires the same `onClicked`.
+- The panel resolves the active tab in its window on load and auto-summarizes. It also listens for
+  `tldr:activated`, accepted only when `sender.id === chrome.runtime.id`, type matches and `tabId` is an
+  integer; it then starts a fresh run (aborting any in-flight one) for that tab. If a run for the same tab
+  is already in flight (the first click opens the panel and also sends the message) the message is skipped.
+- **Stale panel.** `tabs.onActivated` / `tabs.onUpdated` (status only; readable without permissions) mark
+  the panel stale: a slim banner says to click the icon, the old page title is hidden, and control changes
+  re-extract instead of re-using the old page. There is no button in the banner because a panel click does
+  not grant access.
+- Wiring is in `src/lib/background-wiring.js` and `src/lib/activation.js` so it is unit tested with a stub.
 
 ## Extraction
 
-- **activeTab only, no host permissions.** The toolbar click grants activeTab; the panel then
-  runs `chrome.scripting.executeScript`. Two calls: inject `extract.js` (an esbuild IIFE that
-  bundles `@mozilla/readability` and sets `globalThis.__tldrPanelExtract`), then call it. Both
-  run in the same isolated world so the global persists.
-- **Readability first, body text fallback.** `isProbablyReaderable` then `Readability.parse()`
-  on a cloned document (Readability mutates its input). If the result is under 200 chars, fall
-  back to `body.innerText`. Text is capped at 500,000 characters.
-- **Failure messages.** No grant (user switched tabs): "Click the TL;DR Panel toolbar icon on
-  this tab to summarize it." chrome://, Web Store, extension pages, PDFs (by URL or content
-  type) and empty pages each get their own message (`src/lib/page.js`). PDFs are not
-  supported in 1.0.
-- **Side panel does not follow tab switches.** It summarizes the tab active when it ran; the
-  user clicks the icon again on another tab (which also renews the activeTab grant).
+- **activeTab only, no host permissions.** Two `executeScript` calls: inject `extract.js` (an esbuild
+  IIFE bundling `@mozilla/readability`), then call it. Both run in the same isolated world.
+- **Readability first, body text fallback**, on a cloned document. Text is rebuilt from Readability's
+  HTML so blank-line paragraph breaks (and single newlines between list items) survive, which lets the
+  chunker split on paragraphs. Under 200 chars falls back to `body.innerText`. Text is capped at 500,000
+  characters and `truncated` is surfaced as a note. Pages with more than 2,000,000 characters of raw text
+  skip Readability (cloning and parsing that DOM is slow) and use sliced body text.
+- **Errors** (`src/lib/page.js`): `executeScript` failures are read from rejections and from
+  `result[].error`. Internal pages, PDFs (only by URL or content type), empty pages, `file:` URLs and
+  missing grants get their own neutral messages; anything else shows "Something unexpected happened. Try
+  again, or reload the page." and the raw error goes to the console only. Unrelated errors cannot match
+  the no-grant regex.
+- **`?tabId=` test hook** exists only when built with `--e2e` (`__E2E__` define; esbuild drops the branch,
+  and `scripts/package.mjs` fails if it is found in `dist/`).
 
 ## Long pages
 
-- `measureInputUsage` versus `inputQuota`. If too large: split on paragraph, then sentence,
-  then word boundaries to about 70% of quota (proportional to measured usage), summarize each
-  chunk with `key-points`, join, and repeat until it fits, then run the user's chosen
-  type/length. Progress shows "Summarizing part N of M". `QuotaExceededError` re-splits using
-  `err.quota`/`err.requested` (max depth 4). If the final pass throws a quota error the quota
-  is lowered and the loop continues. The logic is pure and injected (`src/lib/pipeline.js`,
-  `src/lib/chunking.js`).
+- Real model facts (measured): `inputQuota` 9216; `'hello world'` = 511 tokens; 2100 chars = 874;
+  10500 chars = 2330. There is a fixed ~500-token overhead per request, so tokens are not proportional to
+  characters. The pipeline measures the overhead once and sizes chunks from marginal tokens per character
+  toward 70% of the quota.
+- Guards: quota must be finite and > 0; chunks below 100 chars, more than 60 chunks in one pass, or more
+  than 150 chunk calls in a run fail with `TooLongError` ("This page is too long to summarize on-device")
+  before hammering the model. `QuotaExceededError` retries clamp the split ratio to [0.1, 0.5].
 
 ## Build, icons, tooling
 
-- **esbuild** bundles three entries: `sidepanel.js` (ESM), `background.js` (ESM), `extract.js`
-  (IIFE). No frameworks. `dist/` is loadable unpacked.
-- **Icons** are drawn by `scripts/icons.mjs` with a small pure-Node rasterizer and PNG encoder
-  (no native dependencies): an indigo rounded square with a "TL;DR" pixel-font glyph at
-  48/128 px and a "summary lines" glyph at 16 px (text is illegible that small). PNGs are
-  committed.
-- **Packaging** with `adm-zip` (cross-platform, manifest at zip root).
-- **Manifest** sets `minimum_chrome_version: 138`.
-- `package.json` is `"type": "module"`; ESLint flat config.
+- **esbuild** bundles `sidepanel.js` (ESM), `background.js` (ESM), `extract.js` (IIFE), with
+  `minifySyntax` so dead branches are removed.
+- **Icons** are drawn by `scripts/icons.mjs` (pure Node rasterizer): one bold "TL" motif at every size
+  (with ";" from 48px up), panel accent blue `#1d4ed8`, and a lighter inner stroke for dark toolbars.
+  Viewed at 16/48/128 (normal and enlarged) on white, dark and grey backgrounds.
+- **Packaging** (`scripts/package.mjs`) refuses to zip if the dist manifest has host permissions, no CSP,
+  a description over 132 chars, e2e artifacts, or is missing the licence files; it checks the zip root.
+- **CSP:** `script-src 'self'; object-src 'self'; base-uri 'none'; form-action 'none'; connect-src 'none'`.
+  `connect-src 'none'` was verified with the real Summarizer (create, streaming, model measure) in Chrome
+  153 and with the e2e fake; nothing in the extension makes network requests.
+- **Licences:** `LICENSE-readability.md` ships in the package and the full Apache-2.0 text is in
+  `THIRD_PARTY_NOTICES.md`.
 
-## Testing
+## UX notes
 
-- **Unit (Vitest + jsdom):** chunking, stream delta/cumulative, markdown renderer including
-  XSS attempts, quota-retry logic, extraction (article, fallback, empty), page classification.
-- **E2E (Playwright, bundled Chromium, new headless via `channel: 'chromium'`):** the
-  unpacked extension is loaded; `sidepanel.html` is opened as a normal tab (extension id from
-  the service worker URL); a fake `Summarizer` is injected with `addInitScript` for: missing
-  API, unavailable, downloadable then progress then available (asserting user activation at
-  `create()`), delta streaming success, quota-exceeded chunking, error, cancel, empty page.
-- **Extraction in e2e uses a test-only build.** `activeTab` is never granted in automation,
-  and the real panel also needs a target tab. The panel therefore accepts `?tabId=` (used only
-  when present). `scripts/build.mjs --e2e` builds `dist-e2e/`, identical except for
-  `host_permissions: ["http://127.0.0.1/*"]`, so the real `executeScript` extraction path runs
-  against a local fixture. `dist-e2e/` is never packaged. The shipped `dist/` is tested for:
-  manifest has no host permissions, and without a grant the panel shows the friendly
-  "click the toolbar icon" message.
-- **Screenshots** in `docs/screenshots/` are of the panel page at 420x760 in a normal tab
-  (light and dark), produced by the e2e run with the fake Summarizer, so the summary text in
-  them is canned.
+- Styles: Summary (`tldr`) / Key points / Headline. Teaser was dropped; stored `teaser` migrates to
+  Summary. Stored values are whitelisted. Detail (Brief/Standard/Detailed = short/medium/long) is inside
+  "More options" and hidden for Headline. Control changes re-run after a 400 ms debounce.
+- Page-cannot-be-read states are neutral (no red); red is reserved for real failures.
+- Accessibility: `aria-live` removed from the streaming result; one visually hidden status line
+  announces "Summary ready", "Stopped", copy result and 25/50/75/100% download progress. Errors unhide
+  first then focus the heading; buttons that can hold focus use `aria-disabled`; focus moves to the result
+  on completion only if it would otherwise be lost. Forced-colors, RTL (logical properties, `dir=auto`),
+  320px and reduced-motion handled in CSS.
 
-## Not verified
+## Verification (what was actually run, and what was not)
 
-- **The real on-device model (Gemini Nano) was not exercised.** All Summarizer behavior in
-  tests is a fake modeled on the documented API. Real chunk semantics (delta vs cumulative),
-  `measureInputUsage` values, quota sizes, download progress events, and output quality are
-  unverified.
-- **The true toolbar-click flow** (side panel opening, activeTab grant, Alt+Shift+S) cannot be
-  driven by Playwright. Only the manifest wiring and `getPanelBehavior()` are asserted.
-- **Side panel rendering inside Chrome's actual panel** (width, chrome around it) is
-  approximated by a 420px tab.
-- **Not tested on macOS/Linux, non-English pages, PDFs in the real Chrome PDF viewer, or
-  Chrome Web Store pages.**
+- **Unit (Vitest + jsdom)** and **e2e (Playwright, bundled Chromium, fake Summarizer)**. The e2e suite
+  loads `dist-e2e` (same code plus `host_permissions` for 127.0.0.1 so the real `executeScript`
+  extraction runs) and the shipped `dist` (manifest, no-grant notice, hook absent). The service worker ->
+  panel `tldr:activated` message is exercised for real; the sender check is unit tested only, because a
+  second sender cannot be simulated in Playwright.
+- **Real Chrome 153 + real model (Puppeteer, this round):** the panel from `dist-e2e` (identical code to
+  `dist`, reached via `?tabId=`) extracted the fixture article and produced real streamed summaries in
+  light and dark with the final CSP. The result screenshots use that real output.
+- **NOT verified this round (honest gaps):**
+  - The shipped `dist/` with a real toolbar click producing an activeTab grant, and a click on a second
+    tab re-summarizing while the panel is open. An OS-level attempt (SendKeys Alt+Shift+S) opened the
+    panel in the first run but the panel reported no grant; the cause is unknown (input delivery/focus in
+    an automated window vs. a real limitation). Later attempts were aborted because the automation window
+    was not in front and synthetic input was landing in another browser window on the shared desktop, so
+    OS-level input automation was stopped. Someone must verify manually: load `dist/`, open an article,
+    click the toolbar icon (and try Alt+Shift+S), then switch tabs and click again.
+  - Real clipboard copy (e2e stubs `navigator.clipboard`), real background download continuation after
+    cancel, macOS/Linux, non-English pages, PDFs in the real viewer, Web Store pages.
+- **Screenshots** (`node scripts/screenshots.mjs`, needs `build --e2e`): 1280x800 with the fixture article
+  and the panel at 420px. Result screenshots use real model output (`docs/screenshots/raw/real-result-*`);
+  the download and unavailable states come from the e2e fake (they cannot be produced on this machine, as
+  the model is installed). Only the fixture page and the panel are captured, no browser chrome.
