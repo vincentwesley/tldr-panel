@@ -12,7 +12,7 @@ describe('parseStoredPrefs', () => {
     expect(parseStoredPrefs({ type: 'teaser' }).type).toBe('tldr');
   });
   it('whitelists every field independently', () => {
-    expect(parseStoredPrefs({ type: '"]),x', length: 7, language: 'fr' })).toEqual(DEFAULT_PREFS);
+    expect(parseStoredPrefs({ type: '"]),x', length: 7, language: 'pt' })).toEqual(DEFAULT_PREFS);
     expect(parseStoredPrefs({ type: 'headline', length: 'bogus', language: 'ja' })).toEqual({ type: 'headline', length: 'medium', language: 'ja' });
   });
   it('reads all three keys', () => {

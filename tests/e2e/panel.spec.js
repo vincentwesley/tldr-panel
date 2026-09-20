@@ -34,7 +34,8 @@ test.beforeAll(async () => {
     const esBody = 'El ayuntamiento aprobo el martes por la noche un plan que anade cuarenta kilometros de carriles bici protegidos en el centro y en los barrios del este de la ciudad.';
     if (req.url === '/es') return res.end(langPage('es-MX', esBody));
     if (req.url === '/ja') return res.end(langPage('ja', '市議会は火曜日の夜、中心部と東部の地区に四十キロメートルの保護された自転車専用レーンを新設する計画を承認しました。'.repeat(3)));
-    if (req.url === '/fr') return res.end(langPage('fr', esBody));
+    if (req.url === '/fr') return res.end(langPage('fr-CA', esBody));
+    if (req.url === '/pt') return res.end(langPage('pt', esBody));
     if (req.url === '/article2') return res.end(article2);
     if (req.url === '/long') {
       const p = '<p>' + 'The council discussed the long agenda item in considerable detail today. '.repeat(20) + '</p>';
@@ -403,7 +404,7 @@ test.describe('with fake Summarizer (e2e build)', () => {
     await panel.locator('#more summary').click();
     const select = panel.getByLabel('Language');
     await expect(select).toHaveValue('auto');
-    expect(await select.locator('option').evaluateAll((os) => os.map((o) => o.value))).toEqual(['auto', 'en', 'es', 'ja']);
+    expect(await select.locator('option').evaluateAll((os) => os.map((o) => o.value))).toEqual(['auto', 'en', 'es', 'ja', 'fr', 'de']);
     await select.selectOption('es');
     await expect.poll(async () => (await fakeCalls(panel)).create.at(-1).outputLanguage).toBe('es');
     expect((await fakeCalls(panel)).create.at(-1).expectedInputLanguages).toEqual(['en']); // the page is English
@@ -417,8 +418,8 @@ test.describe('with fake Summarizer (e2e build)', () => {
     await expect(panel.getByLabel('Language')).toHaveValue('auto');
   });
 
-  test('Auto follows the page language (es-MX, ja) and passes it to create()', async () => {
-    for (const [fixture, lang] of [['/es', 'es'], ['/ja', 'ja']]) {
+  test('Auto follows the page language (es-MX, ja, fr-CA) and passes it to create()', async () => {
+    for (const [fixture, lang] of [['/es', 'es'], ['/ja', 'ja'], ['/fr', 'fr']]) {
       const { panel } = await openPanel(h, { scenario: 'success', fixture });
       await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
       expect((await fakeCalls(panel)).create[0]).toMatchObject({ outputLanguage: lang, expectedInputLanguages: [lang] });
@@ -427,7 +428,7 @@ test.describe('with fake Summarizer (e2e build)', () => {
   });
 
   test('Auto with a page language that is not in the list summarizes in English', async () => {
-    const { panel } = await openPanel(h, { scenario: 'success', fixture: '/fr' });
+    const { panel } = await openPanel(h, { scenario: 'success', fixture: '/pt' });
     await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
     expect((await fakeCalls(panel)).create[0]).toMatchObject({ outputLanguage: 'en', expectedInputLanguages: ['en'] });
   });
@@ -451,7 +452,7 @@ test.describe('with fake Summarizer (e2e build)', () => {
   test('NotSupportedError on an unsupported page language shows the gentle notice, not raw errors', async () => {
     const { panel } = await openPanel(h, {
       scenario: 'success',
-      fixture: '/fr',
+      fixture: '/pt',
       init: () => {
         window.__fakeLang = { en: "reject-create" };
       },
