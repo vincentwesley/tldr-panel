@@ -126,6 +126,20 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .more > summary:hover { color: var(--text); }
 .more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-sm); }
 .more fieldset { margin: var(--s1) 0 var(--s1); }
+.field { display: flex; align-items: center; gap: var(--s2); margin: var(--s2) 0 var(--s1); font-size: var(--fs-sm); }
+.field label { color: var(--muted); flex: 0 0 auto; }
+.field select {
+  flex: 1 1 auto; min-width: 0; font: inherit; font-size: var(--fs-sm); min-height: var(--target); padding: var(--s1) var(--s2);
+  border: 1px solid var(--border-ui); border-radius: var(--r-md); background: var(--surface); color: var(--text);
+}
+.field select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mode-chip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); margin: 0 0 var(--s3);
+  padding: var(--s1) var(--s3); border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md);
+  font-size: var(--fs-sm); color: var(--muted);
+}
+.mode-chip[hidden] { display: none; }
+.mode-chip .link-btn { min-height: var(--target); padding-inline: var(--s1); }
 
 /* States */
 .state { margin: 0; }

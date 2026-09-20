@@ -193,3 +193,52 @@ read, the banner stays up when that tab is not the one the run read (`shouldStay
 being cleared. Unreadable blank tabs: right after a toolbar click (`afterClick`), a no-grant failure on a tab with
 an empty or about: URL shows the neutral "Chrome doesn't let extensions read this kind of page" message; without a
 click, or on real http(s) tabs, the no-grant message is unchanged.
+
+## 1.1.0: selection and output language (code decisions)
+
+- Selection: the injected extractor reads `getSelection().toString()` in the top frame only (no allFrames). At or above
+  150 non-whitespace characters (after clean-up: zero-width characters removed, whitespace runs collapsed) it summarizes only the selection; below, the whole page. Same 120k cap and
+  chunking pipeline. "Summarize whole page instead" runs mode `page`; a new trigger (toolbar click, Summarize again,
+  tab change) resets to auto; option changes keep the current mode. Logic: src/lib/selection.js (unit-tested).
+- Language: the supported list lives ONLY in `LANGUAGES` in src/lib/language.js (en, es, ja, fr, de; verified in real
+  Chrome, see below). Auto = page language primary subtag when in the list, else English; the
+  page language is also expectedInputLanguages. Intermediate chunk summaries use the page-language pair only when its `availability()` is 'available'; otherwise they use the final (output, input) pair, which the run already checked (a separate pair may need its own download, which cannot start outside a click). If the pair
+  is 'unavailable' in Auto it falls back to English; an explicit choice that is unavailable is reported. A
+  NotSupportedError on a page whose language is not in the list shows a neutral notice. Non-English pairs that report
+  'downloadable' use the existing download card. The card names a language only when the OUTPUT language is the one being downloaded (English output on a non-English page gets neutral wording), and the 22 GB disk-space line (base model only) is hidden for language downloads; no size claims are made. A failed run or unreadable page resets the footnote to the preference-based text. Preference is whitelisted in
+  src/lib/prefs.js (unknown or corrupted -> Auto; 1.0.x prefs migrate).
+- No new permissions; manifest and CSP unchanged.
+
+### 1.1.0 real-Chrome verification (2026-09-20, Chrome 153.0.8010.48, Windows 11, real Gemini Nano)
+
+Method: puppeteer-core (pipe, throwaway copy of a profile that already had the model), extension loaded from the shipped
+dist/, toolbar action triggered with CDP Extensions.triggerAction (grants activeTab). No OS-level input.
+
+Empirical `Summarizer.availability({type:'tldr',format:'plain-text',length:'medium',outputLanguage:X,expectedInputLanguages:[Y]})`,
+evaluated from the extension page. For every X, the four forms (Y=X; Y='en'; outputLanguage only; output 'en' with input X)
+gave the same answer:
+
+| Language | availability |
+| --- | --- |
+| en, es, ja, fr, de | available (all four forms) |
+| pt, it, ko, zh, hi, ar, ru | unavailable (all four forms) |
+
+Chrome's documentation lists only en, es, ja; this build also reports fr and de as available, and real `create()` +
+`summarize()` produced French, German, Spanish and Japanese text (one Japanese sample used a simplified-Chinese form in
+"自行车道", so quality is uneven). Availability is per Chrome build and can change; re-check on upgrades. LANGUAGES
+contains exactly the 'available' set. Nothing needed a language download on this profile, so the "downloadable" path
+(download card with language wording) is covered only by the fake-Summarizer e2e tests, not by real Chrome.
+
+Real-Chrome UI results (all with the real model):
+- Selection of one paragraph: chip "Summarizing your selection"; the streamed summary covered only that paragraph
+  (parking, loading zones, 12-month review) vs the full-page run (40 km, spring start, funding). "Summarize whole page
+  instead" produced the whole-page summary and hid the chip. A 60-character selection fell back to the whole page.
+- Auto: lang="es" page -> Spanish summary, footnote "Summaries are in Español (Spanish), the page's language"; lang="ja" ->
+  Japanese; lang="fr" -> French; lang="ru" (unsupported) -> English summary, footnote "English by default", no error.
+- Explicit Español on an English page -> Spanish summary; the choice, the "Language: Español" summary line and the footnote
+  persisted across a panel reload.
+- Regression: Summary, Key points and Headline still work; switching tabs shows the "You switched pages" banner.
+- No real-Chrome bugs found in the feature code; only the language list changed.
+
+Known gaps: the real language-download flow, selections inside iframes (top frame only by design), selections spanning
+shadow DOM, screen readers, and any OS other than Windows are unverified. Only an English page was used for the selection test.

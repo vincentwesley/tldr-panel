@@ -64,3 +64,39 @@ describe('paragraph structure', () => {
     expect(r2.truncated).toBe(true);
   });
 });
+
+describe('extractPage selection', () => {
+  const sel = (text) => {
+    const doc = make(`<head><title>T</title></head><body><article><p id="p">${text}</p><p>${longPara}</p><p>${longPara}</p><p>${longPara}</p></article></body>`);
+    const r = doc.createRange();
+    r.selectNodeContents(doc.getElementById('p'));
+    doc.defaultView.getSelection().removeAllRanges();
+    doc.defaultView.getSelection().addRange(r);
+    return doc;
+  };
+  it('returns only a long selection', () => {
+    const text = 'Selected sentence about harbours and ferries. '.repeat(5);
+    const r = extractPage(sel(text));
+    expect(r.kind).toBe('selection');
+    expect(r.text).toBe(text.trim());
+    expect(r.text).not.toContain('committee');
+  });
+  it('ignores a short selection and the selection in whole-page mode', () => {
+    expect(extractPage(sel('too short')).kind).not.toBe('selection');
+    expect(extractPage(sel('Selected sentence about harbours. '.repeat(8)), { mode: 'page' }).kind).not.toBe('selection');
+  });
+  it('a whitespace / nbsp / zero-width-only selection falls back to the page', () => {
+    for (const junk of ['  ​\n'.repeat(300), '​'.repeat(400), ' '.repeat(400)]) {
+      const doc = sel(junk);
+      const r = extractPage(doc);
+      expect(r.kind).not.toBe('selection');
+      expect(r.text).toContain('committee reviewed');
+    }
+  });
+  it('caps a huge selection at MAX_CHARS and flags truncation', () => {
+    const r = extractPage(sel('x '.repeat(MAX_CHARS)));
+    expect(r.kind).toBe('selection');
+    expect(r.text.length).toBe(MAX_CHARS);
+    expect(r.truncated).toBe(true);
+  });
+});

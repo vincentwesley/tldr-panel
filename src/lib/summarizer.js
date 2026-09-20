@@ -1,8 +1,8 @@
 // Thin adapter over Chrome's built-in Summarizer API so tests can inject a fake globalThis.Summarizer.
 export const isSupported = () => typeof globalThis.Summarizer !== 'undefined';
 
-export function buildOptions({ type = 'tldr', length = 'medium', format = 'markdown', sharedContext } = {}) {
-  const o = { type, length, format, outputLanguage: 'en', expectedInputLanguages: ['en'] };
+export function buildOptions({ type = 'tldr', length = 'medium', format = 'markdown', sharedContext, outputLanguage = 'en', expectedInputLanguages = ['en'] } = {}) {
+  const o = { type, length, format, outputLanguage, expectedInputLanguages: [...expectedInputLanguages] };
   if (sharedContext) o.sharedContext = sharedContext;
   return o;
 }

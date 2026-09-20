@@ -41,10 +41,20 @@
         <label><input type="radio" name="length" value="medium" checked><span>Standard</span></label>
         <label><input type="radio" name="length" value="long"><span>Detailed</span></label>
       </fieldset>
+      <div class="field" id="language-field">
+        <label for="language">Language</label>
+        <select id="language" name="language">
+          <option value="auto">Auto (page language)</option>
+        </select>
+      </div>
     </details>
   </form>
 
   <main>
+    <p id="mode-chip" class="mode-chip" hidden>
+      <span id="mode-chip-text">Summarizing your selection</span>
+      <button id="whole-page-btn" type="button" class="link-btn">Summarize whole page instead</button>
+    </p>
     <section id="state-loading" class="state" hidden>
       <div class="loading-row">
         <p id="loading-text">Reading page...</p>
@@ -55,9 +65,9 @@
 
     <section id="state-download" class="state card" hidden>
       <svg class="glyph" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <h2 tabindex="-1">One-time setup: download Chrome's on-device AI</h2>
-      <p>Summaries are written by an AI model that runs on your computer. Chrome downloads it once (about 7 minutes on a fast connection in our test, so best on Wi-Fi). After that it works offline, and the page you summarize never leaves your device.</p>
-      <p class="small">Chrome needs about 22 GB of free disk space to start the download.</p>
+      <h2 id="download-title" tabindex="-1">One-time setup: download Chrome's on-device AI</h2>
+      <p id="download-intro">Summaries are written by an AI model that runs on your computer. Chrome downloads it once (about 7 minutes on a fast connection in our test, so best on Wi-Fi). After that it works offline, and the page you summarize never leaves your device.</p>
+      <p id="download-disk-note" class="small">Chrome needs about 22 GB of free disk space to start the download.</p>
       <div class="row">
         <button id="download-btn" type="button" class="primary">Download and summarize</button>
         <button id="download-cancel-btn" type="button" hidden>Cancel</button>
@@ -111,7 +121,7 @@
   </div>
 
   <p id="status" class="sr-only" role="status"></p>
-  <footer class="footnote">Summaries are in English.</footer>
+  <footer id="footnote" class="footnote">Summaries are in English by default; change in More options.</footer>
 
   <script type="module" src="sidepanel.js"></script>
 </body>

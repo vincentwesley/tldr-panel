@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0: selection and language
+
+- Summarize just your selection: select at least 150 characters and click the icon; "Summarize whole page instead" returns to the full page. Top frame only.
+- Output language picker under More options (Auto, English, Spanish, Japanese, French, German). Auto follows the page's declared language when supported, else English. The list was set from a real Chrome 153 availability check (pt, it, ko, zh, hi, ar, ru reported unavailable).
+- The footnote and download wording adapt to the chosen language. Panel UI text stays English.
+- A selection counts only when it has at least 150 non-whitespace characters; zero-width characters are ignored. A truncated selection says "Your selection is very long" rather than "This page".
+- The language download card no longer names a language unless it is the output language, and no longer shows the base-model disk-space line for language downloads.
+- Long pages: chunk summaries use the page-language pair only when it is already available, otherwise the final language pair.
+- Focus stays in the panel after "Summarize whole page instead"; the footnote no longer shows a previous run's language after a failure.
+- No new permissions; manifest and CSP unchanged.
+
 ## 1.0.1: UI polish
 
 - Cleaner, calmer side panel: design tokens, sticky top bar with refresh, page title subtitle, quieter Style/Detail controls, larger reading text, ghost Copy with "Copied" feedback, skeleton loading, glyphs on state cards, slim stale notice, low-key footer.

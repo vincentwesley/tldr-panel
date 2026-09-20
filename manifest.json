@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TL;DR Panel",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Summarize the page you're reading in one click, privately, using Chrome's built-in on-device AI. Needs desktop Chrome 138+.",
   "minimum_chrome_version": "138",
   "permissions": [

@@ -89,7 +89,7 @@ export function shouldStayStale({ runTabId, activatedTabId }) {
  * `afterClick`: this run was started by a toolbar click on this tab. Chrome then always grants activeTab, so a
  * no-grant failure on a tab with no readable URL (about:blank and similar) is really an unreadable page.
  */
-export async function extractFromTab(tab, { afterClick = false } = {}) {
+export async function extractFromTab(tab, { afterClick = false, mode = 'auto' } = {}) {
   if (!tab || tab.id == null) throw new PageError(MSG.noGrant, 'no-grant');
   const early = classifyPage({ url: tab.url });
   if (early) throw early;
@@ -99,7 +99,9 @@ export async function extractFromTab(tab, { afterClick = false } = {}) {
     if (inject?.[0]?.error) throw inject[0].error;
     const [res] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => globalThis.__tldrPanelExtract(),
+      // Top frame only (no allFrames): a selection inside an iframe is not read.
+      func: (m) => globalThis.__tldrPanelExtract(m),
+      args: [mode === 'page' ? 'page' : 'auto'],
     });
     if (res?.error) throw res.error;
     result = res?.result;

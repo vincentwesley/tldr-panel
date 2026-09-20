@@ -1,6 +1,6 @@
 {
   "name": "tldr-panel",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "One click. Private summary of any page, right in your side panel.",
   "private": true,
   "type": "module",
