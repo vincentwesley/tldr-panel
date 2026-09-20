@@ -23,6 +23,11 @@ export function installFake(scenario) {
       if (scenario === 'unavailable') return 'unavailable';
       // Scripted per-language availability: window.__fakeLang = { es: 'downloadable', ja: 'unavailable', fr: 'unsupported' }
       const l = o.outputLanguage;
+      // Per-pair script (finer than __fakeLang): window.__fakePair = { 'en>es': 'downloadable' }, keyed 'output>input,...'
+      const pair = `${l}>${(o.expectedInputLanguages || []).join(',')}`;
+      const pairScripted = window.__fakePair?.[pair];
+      if (pairScripted === 'unavailable') return 'unavailable';
+      if (pairScripted === 'downloadable' && !langDone.has(pair)) return 'downloadable';
       const scripted = window.__fakeLang?.[l];
       if (scripted === 'unsupported') throw new DOMException('unsupported language', 'NotSupportedError');
       if (scripted === 'unavailable') return 'unavailable';
@@ -37,6 +42,8 @@ export function installFake(scenario) {
         expectedInputLanguages: opts.expectedInputLanguages,
         activation: navigator.userActivation.isActive,
       });
+      const pairKey = `${opts.outputLanguage}>${(opts.expectedInputLanguages || []).join(',')}`;
+      if (window.__fakePair?.[pairKey] === 'downloadable') langDone.add(pairKey);
       if (window.__fakeLang?.[opts.outputLanguage] === "reject-create") throw new DOMException('unsupported language', 'NotSupportedError');
       if (window.__fakeLang?.[opts.outputLanguage] === 'downloadable') langDone.add(opts.outputLanguage);
       if (!downloaded) {
