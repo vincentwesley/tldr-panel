@@ -193,3 +193,18 @@ read, the banner stays up when that tab is not the one the run read (`shouldStay
 being cleared. Unreadable blank tabs: right after a toolbar click (`afterClick`), a no-grant failure on a tab with
 an empty or about: URL shows the neutral "Chrome doesn't let extensions read this kind of page" message; without a
 click, or on real http(s) tabs, the no-grant message is unchanged.
+
+## 1.1.0: selection and output language (code decisions)
+
+- Selection: the injected extractor reads `getSelection().toString()` in the top frame only (no allFrames). At or above
+  150 characters (after whitespace clean-up) it summarizes only the selection; below, the whole page. Same 120k cap and
+  chunking pipeline. "Summarize whole page instead" runs mode `page`; a new trigger (toolbar click, Summarize again,
+  tab change) resets to auto; option changes keep the current mode. Logic: src/lib/selection.js (unit-tested).
+- Language: the supported list lives ONLY in `LANGUAGES` in src/lib/language.js (conservative default en, es, ja; not
+  yet verified empirically in real Chrome). Auto = page language primary subtag when in the list, else English; the
+  page language is also expectedInputLanguages. Intermediate chunk summaries stay in the page language. If the pair
+  is 'unavailable' in Auto it falls back to English; an explicit choice that is unavailable is reported. A
+  NotSupportedError on a page whose language is not in the list shows a neutral notice. Non-English pairs that report
+  'downloadable' use the existing download card with wording that makes no size claims. Preference is whitelisted in
+  src/lib/prefs.js (unknown or corrupted -> Auto; 1.0.x prefs migrate).
+- No new permissions; manifest and CSP unchanged.

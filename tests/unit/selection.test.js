@@ -35,3 +35,9 @@ describe('decideMode', () => {
     expect(decideMode()).toBe(MODE_AUTO);
   });
 });
+
+describe('cleanSelection whitespace', () => {
+  it('turns non-breaking spaces into plain spaces', () => {
+    expect(cleanSelection('a\u00a0b')).toBe('a b');
+  });
+});

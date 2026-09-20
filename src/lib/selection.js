@@ -10,7 +10,7 @@ export const MODE_PAGE = 'page'; // the user asked for the whole page
 export function cleanSelection(s) {
   return String(s || '')
     .replace(/\r/g, '')
-    .replace(/ /g, ' ')
+    .replace(/\u00a0/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
