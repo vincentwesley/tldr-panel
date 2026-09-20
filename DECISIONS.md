@@ -197,15 +197,15 @@ click, or on real http(s) tabs, the no-grant message is unchanged.
 ## 1.1.0: selection and output language (code decisions)
 
 - Selection: the injected extractor reads `getSelection().toString()` in the top frame only (no allFrames). At or above
-  150 characters (after whitespace clean-up) it summarizes only the selection; below, the whole page. Same 120k cap and
+  150 non-whitespace characters (after clean-up: zero-width characters removed, whitespace runs collapsed) it summarizes only the selection; below, the whole page. Same 120k cap and
   chunking pipeline. "Summarize whole page instead" runs mode `page`; a new trigger (toolbar click, Summarize again,
   tab change) resets to auto; option changes keep the current mode. Logic: src/lib/selection.js (unit-tested).
 - Language: the supported list lives ONLY in `LANGUAGES` in src/lib/language.js (en, es, ja, fr, de; verified in real
   Chrome, see below). Auto = page language primary subtag when in the list, else English; the
-  page language is also expectedInputLanguages. Intermediate chunk summaries stay in the page language. If the pair
+  page language is also expectedInputLanguages. Intermediate chunk summaries use the page-language pair only when its `availability()` is 'available'; otherwise they use the final (output, input) pair, which the run already checked (a separate pair may need its own download, which cannot start outside a click). If the pair
   is 'unavailable' in Auto it falls back to English; an explicit choice that is unavailable is reported. A
   NotSupportedError on a page whose language is not in the list shows a neutral notice. Non-English pairs that report
-  'downloadable' use the existing download card with wording that makes no size claims. Preference is whitelisted in
+  'downloadable' use the existing download card. The card names a language only when the OUTPUT language is the one being downloaded (English output on a non-English page gets neutral wording), and the 22 GB disk-space line (base model only) is hidden for language downloads; no size claims are made. A failed run or unreadable page resets the footnote to the preference-based text. Preference is whitelisted in
   src/lib/prefs.js (unknown or corrupted -> Auto; 1.0.x prefs migrate).
 - No new permissions; manifest and CSP unchanged.
 
