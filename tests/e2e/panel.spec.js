@@ -30,6 +30,11 @@ test.beforeAll(async () => {
   server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
     if (req.url === '/empty') return res.end('<title>Empty</title><body></body>');
+    const langPage = (lang, body) => `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><title>Lang ${lang}</title></head><body><article><h1>Lang ${lang}</h1>${Array.from({ length: 5 }, () => `<p>${body}</p>`).join('')}</article></body></html>`;
+    const esBody = 'El ayuntamiento aprobo el martes por la noche un plan que anade cuarenta kilometros de carriles bici protegidos en el centro y en los barrios del este de la ciudad.';
+    if (req.url === '/es') return res.end(langPage('es-MX', esBody));
+    if (req.url === '/ja') return res.end(langPage('ja', '市議会は火曜日の夜、中心部と東部の地区に四十キロメートルの保護された自転車専用レーンを新設する計画を承認しました。'.repeat(3)));
+    if (req.url === '/fr') return res.end(langPage('fr', esBody));
     if (req.url === '/article2') return res.end(article2);
     if (req.url === '/long') {
       const p = '<p>' + 'The council discussed the long agenda item in considerable detail today. '.repeat(20) + '</p>';
@@ -63,9 +68,10 @@ const activeTabId = (sw) =>
   });
 
 /** Opens a fixture page (active tab), then the panel page pointed at it via ?tabId= (e2e build only). */
-async function openPanel({ ctx, sw, extId }, { scenario, scheme = 'light', fixture = '/article', init } = {}) {
+async function openPanel({ ctx, sw, extId }, { scenario, scheme = 'light', fixture = '/article', init, prepare } = {}) {
   const target = await ctx.newPage();
   await target.goto(origin + fixture);
+  if (prepare) await prepare(target);
   await target.bringToFront();
   const tabId = await activeTabId(sw);
   const panel = await ctx.newPage();
@@ -144,7 +150,8 @@ test.describe('with fake Summarizer (e2e build)', () => {
     const { panel } = await openPanel(h, { scenario: 'success' });
     await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
     await panel.getByRole('radio', { name: 'Headline' }).check({ force: true });
-    await expect(panel.locator('#more')).toBeHidden();
+    await expect(panel.locator('#length-fs')).toBeHidden(); // Detail does not apply to headlines
+    await expect(panel.locator('#more')).toBeVisible(); // Language still does
     await expect(panel.getByRole('group', { name: 'Style' })).toBeVisible();
   });
 
@@ -339,6 +346,133 @@ test.describe('with fake Summarizer (e2e build)', () => {
     expect((await fakeCalls(panel)).stream).toHaveLength(1);
   });
 
+  // ---------- 1.1.0: selection and language ----------
+  const selectParagraph = (n) => (target) =>
+    target.evaluate((i) => {
+      const r = document.createRange();
+      r.selectNodeContents(document.querySelectorAll('article p')[i]);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }, n);
+
+  test('a long selection is summarized alone, with a notice and status announcement', async () => {
+    const { panel } = await openPanel(h, { scenario: 'success', prepare: selectParagraph(2) });
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    const calls = await fakeCalls(panel);
+    expect(calls.stream[0].text).toContain('regional transport grant');
+    expect(calls.stream[0].text).not.toContain('forty kilometres');
+    await expect(panel.locator('#mode-chip')).toBeVisible();
+    await expect(panel.locator('#mode-chip-text')).toHaveText('Summarizing your selection');
+    await expect(panel.locator('#status')).toHaveText('Summary of your selection ready');
+  });
+
+  test('a short selection falls back to the whole page (no notice)', async () => {
+    const { panel } = await openPanel(h, {
+      scenario: 'success',
+      prepare: (t) =>
+        t.evaluate(() => {
+          const r = document.createRange();
+          r.selectNodeContents(document.querySelector('h1'));
+          getSelection().addRange(r);
+        }),
+    });
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    expect((await fakeCalls(panel)).stream[0].text).toContain('forty kilometres');
+    await expect(panel.locator('#mode-chip')).toBeHidden();
+  });
+
+  test('"Summarize whole page instead" re-runs in whole-page mode; Summarize again returns to auto', async () => {
+    const { panel } = await openPanel(h, { scenario: 'success', prepare: selectParagraph(2) });
+    await expect(panel.locator('#mode-chip')).toBeVisible({ timeout: 15000 });
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    await panel.getByRole('button', { name: 'Summarize whole page instead' }).click();
+    await expect.poll(async () => (await fakeCalls(panel)).stream.length).toBe(2);
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    expect((await fakeCalls(panel)).stream[1].text).toContain('forty kilometres');
+    await expect(panel.locator('#mode-chip')).toBeHidden();
+    await panel.getByRole('button', { name: 'Summarize again' }).click();
+    await expect.poll(async () => (await fakeCalls(panel)).stream.length).toBe(3);
+    await expect(panel.locator('#mode-chip')).toBeVisible();
+    expect((await fakeCalls(panel)).stream[2].text).not.toContain('forty kilometres');
+  });
+
+  test('language select: Auto default, limited options, persists, junk storage falls back to Auto', async () => {
+    const { panel } = await openPanel(h, { scenario: 'success' });
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    await panel.locator('#more summary').click();
+    const select = panel.getByLabel('Language');
+    await expect(select).toHaveValue('auto');
+    expect(await select.locator('option').evaluateAll((os) => os.map((o) => o.value))).toEqual(['auto', 'en', 'es', 'ja']);
+    await select.selectOption('es');
+    await expect.poll(async () => (await fakeCalls(panel)).create.at(-1).outputLanguage).toBe('es');
+    expect((await fakeCalls(panel)).create.at(-1).expectedInputLanguages).toEqual(['en']); // the page is English
+    expect((await panel.evaluate(() => chrome.storage.local.get('language'))).language).toBe('es');
+    await panel.reload();
+    await panel.locator('#more summary').click();
+    await expect(panel.getByLabel('Language')).toHaveValue('es');
+    await h.sw.evaluate(() => chrome.storage.local.set({ language: '<img src=x>' }));
+    await panel.reload();
+    await panel.locator('#more summary').click();
+    await expect(panel.getByLabel('Language')).toHaveValue('auto');
+  });
+
+  test('Auto follows the page language (es-MX, ja) and passes it to create()', async () => {
+    for (const [fixture, lang] of [['/es', 'es'], ['/ja', 'ja']]) {
+      const { panel } = await openPanel(h, { scenario: 'success', fixture });
+      await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+      expect((await fakeCalls(panel)).create[0]).toMatchObject({ outputLanguage: lang, expectedInputLanguages: [lang] });
+      await expect(panel.locator('#footnote')).toContainText('page');
+    }
+  });
+
+  test('Auto with a page language that is not in the list summarizes in English', async () => {
+    const { panel } = await openPanel(h, { scenario: 'success', fixture: '/fr' });
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    expect((await fakeCalls(panel)).create[0]).toMatchObject({ outputLanguage: 'en', expectedInputLanguages: ['en'] });
+  });
+
+  test('a language pair that needs a download uses the download card, with activation, and no size claims', async () => {
+    const { panel } = await openPanel(h, {
+      scenario: 'success',
+      fixture: '/es',
+      init: () => {
+        window.__fakeLang = { es: 'downloadable' };
+      },
+    });
+    await expect(panel.locator('#state-download')).toBeVisible();
+    await expect(panel.locator('#download-title')).toContainText('language');
+    await expect(panel.locator('#download-intro')).not.toContainText(/\d\s?(MB|GB)/);
+    await panel.getByRole('button', { name: 'Download and summarize' }).click();
+    await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
+    expect((await fakeCalls(panel)).create[0]).toMatchObject({ outputLanguage: 'es', activation: true });
+  });
+
+  test('NotSupportedError on an unsupported page language shows the gentle notice, not raw errors', async () => {
+    const { panel } = await openPanel(h, {
+      scenario: 'success',
+      fixture: '/fr',
+      init: () => {
+        window.__fakeLang = { en: "reject-create" };
+      },
+    });
+    await expect(panel.locator('#notice-text')).toContainText("isn't supported for on-device summaries", { timeout: 15000 });
+    await expect(panel.locator('body')).not.toContainText('NotSupportedError');
+    await expect(panel.locator('body')).not.toContainText('unsupported language');
+  });
+
+  test('an explicit language that is unavailable is reported, not silently ignored', async () => {
+    await h.sw.evaluate(() => chrome.storage.local.set({ language: 'ja' }));
+    const { panel } = await openPanel(h, {
+      scenario: 'success',
+      init: () => {
+        window.__fakeLang = { ja: 'unavailable' };
+      },
+    });
+    await expect(panel.locator('#state-error')).toBeVisible({ timeout: 15000 });
+    await expect(panel.locator('#state-error')).toContainText('Choose another language');
+  });
+
   test('layout: no horizontal overflow at 320px and no forced-colors breakage', async () => {
     const { panel } = await openPanel(h, { scenario: 'success' });
     await expect(resultLis(panel)).toHaveCount(3, { timeout: 15000 });
@@ -367,7 +501,10 @@ test.describe('shipped build (no host permissions)', () => {
   test('manifest: no host permissions, explicit CSP, action shortcut, short description', async () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(DIST, 'manifest.json'), 'utf8'));
     expect(manifest.host_permissions).toBeUndefined();
-    expect(manifest.permissions.sort()).toEqual(['activeTab', 'scripting', 'sidePanel', 'storage']);
+    expect([...manifest.permissions].sort()).toEqual(['activeTab', 'scripting', 'sidePanel', 'storage']);
+    expect(manifest.optional_host_permissions).toBeUndefined();
+    expect(manifest.optional_permissions).toBeUndefined();
+    expect(manifest.content_scripts).toBeUndefined();
     expect(manifest.commands._execute_action.suggested_key.default).toBe('Alt+Shift+S');
     expect(manifest.content_security_policy.extension_pages).toMatch(/script-src 'self'.*object-src 'self'.*base-uri 'none'.*form-action 'none'/);
     expect(manifest.description.length).toBeLessThanOrEqual(132);

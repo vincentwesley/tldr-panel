@@ -1,7 +1,8 @@
 // Injected with page.addInitScript(installFake, scenario). Must be self-contained (serialized).
 export function installFake(scenario) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const calls = { create: [], summarize: [], stream: [], destroyed: 0 };
+  const calls = { create: [], summarize: [], stream: [], availability: [], destroyed: 0 };
+  const langDone = new Set();
   window.__fakeCalls = calls;
   if (scenario === 'missing') {
     delete globalThis.Summarizer;
@@ -17,12 +18,27 @@ export function installFake(scenario) {
       this.opts = opts;
       this.inputQuota = quota;
     }
-    static async availability() {
+    static async availability(o = {}) {
+      calls.availability.push({ outputLanguage: o.outputLanguage, expectedInputLanguages: o.expectedInputLanguages });
       if (scenario === 'unavailable') return 'unavailable';
+      // Scripted per-language availability: window.__fakeLang = { es: 'downloadable', ja: 'unavailable', fr: 'unsupported' }
+      const l = o.outputLanguage;
+      const scripted = window.__fakeLang?.[l];
+      if (scripted === 'unsupported') throw new DOMException('unsupported language', 'NotSupportedError');
+      if (scripted === 'unavailable') return 'unavailable';
+      if (scripted === 'downloadable' && !langDone.has(l)) return 'downloadable';
       return downloaded ? 'available' : 'downloadable';
     }
     static async create(opts) {
-      calls.create.push({ type: opts.type, length: opts.length, outputLanguage: opts.outputLanguage, activation: navigator.userActivation.isActive });
+      calls.create.push({
+        type: opts.type,
+        length: opts.length,
+        outputLanguage: opts.outputLanguage,
+        expectedInputLanguages: opts.expectedInputLanguages,
+        activation: navigator.userActivation.isActive,
+      });
+      if (window.__fakeLang?.[opts.outputLanguage] === "reject-create") throw new DOMException('unsupported language', 'NotSupportedError');
+      if (window.__fakeLang?.[opts.outputLanguage] === 'downloadable') langDone.add(opts.outputLanguage);
       if (!downloaded) {
         const abortErr = () => new DOMException('Aborted', 'AbortError');
         for (const f of [0, 0.25, 0.5, 0.75, 1]) {
