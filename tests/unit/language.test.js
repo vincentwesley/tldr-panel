@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LANGUAGES, SUPPORTED, AUTO, normalizeLang, sanitizeLanguagePref, resolveLanguage, chunkLanguage, footnote, languageName } from '../../src/lib/language.js';
+import { LANGUAGES, SUPPORTED, AUTO, normalizeLang, sanitizeLanguagePref, resolveLanguage, chunkLanguage, footnote, languageName, downloadCopy, chunkLanguagePair } from '../../src/lib/language.js';
 
 describe('language list', () => {
   it('matches the empirically verified set (Chrome 153) and includes English', () => {
@@ -61,5 +61,36 @@ describe('footnote', () => {
     expect(footnote({ pref: 'es' })).toContain(languageName('es'));
     expect(footnote({ pref: 'auto', resolved: resolveLanguage({ pageLang: 'ja' }) })).toContain(languageName('ja'));
     expect(footnote({ pref: 'auto', resolved: resolveLanguage({ pageLang: 'en' }) })).toMatch(/English/);
+  });
+});
+
+describe('downloadCopy', () => {
+  const r = (outputLanguage, input) => ({ outputLanguage, expectedInputLanguages: [input] });
+  it('English in and out keeps the base-model card with the disk note', () => {
+    expect(downloadCopy(r('en', 'en'))).toMatchObject({ languagePack: false, title: null, intro: null, showDiskNote: true });
+  });
+  it('names the language only when the OUTPUT language is being downloaded', () => {
+    expect(downloadCopy(r('es', 'es')).intro).toContain('Summarizing in Espa');
+    expect(downloadCopy(r('en', 'es')).intro).toContain('Summarizing this page needs a one-time');
+    expect(downloadCopy(r('en', 'es')).intro).not.toMatch(/Espa|Spanish/);
+    expect(downloadCopy(r('fr', 'en')).intro).toContain('Fran');
+  });
+  it('hides the disk-space note and makes no size claims for language downloads', () => {
+    for (const c of [downloadCopy(r('es', 'es')), downloadCopy(r('en', 'ja'))]) {
+      expect(c.showDiskNote).toBe(false);
+      expect(c.intro).not.toMatch(/ds?(MB|GB)/);
+    }
+  });
+});
+
+describe('chunkLanguagePair', () => {
+  const resolved = { outputLanguage: 'en', expectedInputLanguages: ['es'] };
+  it('uses the page language pair only when it is available', () => {
+    expect(chunkLanguagePair(resolved, 'available')).toEqual({ outputLanguage: 'es', expectedInputLanguages: ['es'] });
+  });
+  it('otherwise falls back to the final pair (already checked)', () => {
+    for (const a of ['downloadable', 'downloading', 'unavailable', undefined]) {
+      expect(chunkLanguagePair(resolved, a)).toEqual({ outputLanguage: 'en', expectedInputLanguages: ['es'] });
+    }
   });
 });

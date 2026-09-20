@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MIN_SELECTION_CHARS, MODE_AUTO, MODE_PAGE, cleanSelection, pickSelection, decideMode } from '../../src/lib/selection.js';
+import { MIN_SELECTION_CHARS, MODE_AUTO, MODE_PAGE, cleanSelection, pickSelection, decideMode, truncationNote } from '../../src/lib/selection.js';
 
 const long = 'word '.repeat(40).trim();
 
@@ -57,5 +57,13 @@ describe('zero-width and whitespace-only selections', () => {
 describe('cleanSelection whitespace', () => {
   it('turns non-breaking spaces into plain spaces', () => {
     expect(cleanSelection('a\u00a0b')).toBe('a b');
+  });
+});
+
+describe('truncationNote', () => {
+  it('is selection-specific for selections and page-specific otherwise', () => {
+    expect(truncationNote('selection')).toBe('Your selection is very long; only the first part was summarized.');
+    expect(truncationNote('article')).toBe('This page is very long; only the first part was summarized.');
+    expect(truncationNote('body')).toContain('This page');
   });
 });

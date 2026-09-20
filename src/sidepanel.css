@@ -139,7 +139,7 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   font-size: var(--fs-sm); color: var(--muted);
 }
 .mode-chip[hidden] { display: none; }
-.mode-chip .link-btn { min-height: 28px; padding-inline: var(--s1); }
+.mode-chip .link-btn { min-height: var(--target); padding-inline: var(--s1); }
 
 /* States */
 .state { margin: 0; }

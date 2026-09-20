@@ -4,9 +4,9 @@ import { consumeStream } from './lib/stream.js';
 import { renderMarkdown, toPlainText } from './lib/markdown.js';
 import { getTargetTab, chooseTab, extractFromTab, shouldStayStale, PageError, MSG } from './lib/page.js';
 import { createActivationListener } from './lib/activation.js';
-import { LANGUAGES, AUTO, ENGLISH, languageName, sanitizeLanguagePref, resolveLanguage, chunkLanguage, footnote, UNSUPPORTED_PAGE_NOTICE } from './lib/language.js';
+import { LANGUAGES, AUTO, ENGLISH, languageName, sanitizeLanguagePref, resolveLanguage, chunkLanguagePair, downloadCopy, footnote, UNSUPPORTED_PAGE_NOTICE } from './lib/language.js';
 import { parseStoredPrefs, STORAGE_KEYS, DEFAULT_PREFS } from './lib/prefs.js';
-import { decideMode, MODE_AUTO, MODE_PAGE } from './lib/selection.js';
+import { decideMode, truncationNote, MODE_AUTO, MODE_PAGE } from './lib/selection.js';
 
 const $ = (id) => document.getElementById(id);
 const STATES = ['loading', 'download', 'unavailable', 'notice', 'error', 'result'];
@@ -15,7 +15,6 @@ const prefs = { ...DEFAULT_PREFS };
 const DEBOUNCE_MS = 400;
 const DOWNLOAD_INTRO = document.getElementById('download-intro')?.textContent ?? '';
 const NOTE_STOPPED = 'Stopped early. This summary is incomplete.';
-const NOTE_TRUNCATED = 'This page is very long; only the first part was summarized.';
 
 let page = null; // last successful extraction (null after a failed re-extraction)
 let currentTabId = null; // tab the panel is summarizing
@@ -156,6 +155,7 @@ function showUnavailable(kind) {
     ? 'Update Chrome (menu > Help > About Google Chrome) to version 138 or newer on a desktop computer.'
     : "Chrome's built-in AI isn't available here. This usually means the computer or Chrome setup doesn't meet its requirements (below), or the language you chose isn't available on it.";
   $('unavailable-extra').hidden = missing;
+  resetLanguage();
   show('unavailable');
   $('unavailable-title').focus();
 }
@@ -178,15 +178,20 @@ function showDownload(availability) {
   const btn = $('download-btn');
   btn.textContent = availability === 'downloading' ? 'Resume download' : 'Download and summarize';
   btn.setAttribute('aria-disabled', 'false');
-  // Non-English summaries may need a separate language download; keep the wording accurate for that case.
-  const lang = [activeLang.outputLanguage, ...activeLang.expectedInputLanguages].find((l) => l !== 'en');
-  $('download-title').textContent = lang ? 'One-time setup: download a language for on-device AI' : "One-time setup: download Chrome's on-device AI";
-  $('download-intro').textContent = lang
-    ? `Summarizing in ${languageName(lang)} needs an extra one-time download: a language pack, or Chrome's on-device AI itself if it isn't set up yet. Chrome decides which. Best on Wi-Fi. After that it works offline, and the page you summarize never leaves your device.`
-    : DOWNLOAD_INTRO;
+  // A language pair may need a separate language download; keep the wording accurate for that case.
+  const copy = downloadCopy(activeLang);
+  $('download-title').textContent = copy.title ?? "One-time setup: download Chrome's on-device AI";
+  $('download-intro').textContent = copy.intro ?? DOWNLOAD_INTRO;
+  $('download-disk-note').hidden = !copy.showDiskNote;
   $('download-progress-wrap').hidden = true;
   $('download-cancel-btn').hidden = true;
   show('download');
+}
+
+// Forget the previous run's language (footnote falls back to the preference-based text).
+function resetLanguage() {
+  activeLang = resolveLanguage();
+  syncOptions();
 }
 
 function describeError(e) {
@@ -218,11 +223,12 @@ function describeError(e) {
 function handleError(e, id, { fromDownload = false, availability } = {}) {
   if (id !== runId) return;
   const d = describeError(e);
+  if (d.kind !== 'abort') resetLanguage();
   if (d.kind === 'abort') {
     if (fromDownload) {
       showDownload(availability || 'downloadable'); // neutral: back to the download card, not an error
     } else if (lastText) {
-      setNote(page?.truncated && NOTE_TRUNCATED, NOTE_STOPPED);
+      setNote(page?.truncated && truncationNote(page.kind), NOTE_STOPPED);
       show('result');
       setStatus('Stopped');
     } else {
@@ -386,14 +392,23 @@ async function summarizePage(signal, id, preCreated) {
   show('loading');
   let chunkSummarizer = null;
   const context = page.title ? `Page title: ${page.title}` : undefined;
-  const truncatedNote = page.truncated ? NOTE_TRUNCATED : '';
+  const truncatedNote = page.truncated ? truncationNote(page.kind) : '';
   try {
     const out = await summarizeLong(page.text, {
       quota: adapter.inputQuota(s),
       signal,
       measure: (t) => adapter.measureInputUsage(s, t),
       summarizeChunk: async (t) => {
-        chunkSummarizer ??= await adapter.create(adapter.buildOptions({ type: 'key-points', length: 'medium', ...chunkLanguage(activeLang) }), { signal });
+        if (!chunkSummarizer) {
+          const base = { type: 'key-points', length: 'medium' };
+          let chunkAvailability = 'unavailable';
+          try {
+            chunkAvailability = await adapter.availability(adapter.buildOptions({ ...base, ...chunkLanguagePair(activeLang, 'available') }));
+          } catch {
+            /* treat as not available: use the final pair */
+          }
+          chunkSummarizer = await adapter.create(adapter.buildOptions({ ...base, ...chunkLanguagePair(activeLang, chunkAvailability) }), { signal });
+        }
         return adapter.summarize(chunkSummarizer, t, { context, signal });
       },
       summarizeFinal: (t) =>
@@ -513,7 +528,10 @@ async function init() {
     if ($('again-btn').getAttribute('aria-disabled') === 'true') return;
     run({ fresh: true }); // re-reads the page, so a new selection is picked up
   });
-  $('whole-page-btn').addEventListener('click', () => run({ mode: MODE_PAGE }));
+  $('whole-page-btn').addEventListener('click', () => {
+    run({ mode: MODE_PAGE });
+    $('cancel-btn').focus({ preventScroll: true }); // the chip button just got hidden; keep focus inside the panel
+  });
   $('copy-btn').addEventListener('click', copy);
   const cancel = () => controller?.abort();
   $('cancel-btn').addEventListener('click', cancel);

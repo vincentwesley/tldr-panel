@@ -38,3 +38,10 @@ export function decideMode({ explicit = null, fresh = false, tabChanged = false,
   if (fresh || tabChanged) return MODE_AUTO;
   return current === MODE_PAGE ? MODE_PAGE : MODE_AUTO;
 }
+
+/** Note shown when the text handed to the model was cut at the size cap. */
+export function truncationNote(kind) {
+  return kind === 'selection'
+    ? 'Your selection is very long; only the first part was summarized.'
+    : 'This page is very long; only the first part was summarized.';
+}

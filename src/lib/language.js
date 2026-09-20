@@ -66,3 +66,32 @@ export function footnote({ pref = AUTO, resolved = null } = {}) {
   if (resolved && resolved.outputLanguage !== 'en') return `Summaries are in ${languageName(resolved.outputLanguage)}, the page's language. Change in More options.`;
   return 'Summaries are in English by default; change in More options.';
 }
+
+/**
+ * Wording of the download card. A language name is only mentioned when the OUTPUT language is the one being
+ * fetched; a non-English page read into English output gets neutral wording. The base-model disk figure only
+ * applies to the base model, so it is hidden whenever a language download is involved.
+ */
+export function downloadCopy(resolved) {
+  const out = resolved.outputLanguage;
+  const langInvolved = [out, ...resolved.expectedInputLanguages].some((l) => l !== 'en');
+  if (!langInvolved) return { languagePack: false, title: null, intro: null, showDiskNote: true };
+  const subject = out !== 'en' ? `Summarizing in ${languageName(out)}` : 'Summarizing this page';
+  return {
+    languagePack: true,
+    title: 'One-time setup: download a language for on-device AI',
+    intro: `${subject} needs a one-time download from Chrome: a language pack, or Chrome's on-device AI itself if it isn't set up yet. Chrome decides which. Best on Wi-Fi. After that it works offline, and the page you summarize never leaves your device.`,
+    showDiskNote: false,
+  };
+}
+
+/**
+ * Language pair for the intermediate chunk summaries of a long page. The page's own language is preferred, but only
+ * when that pair is already 'available' (it may otherwise need its own download, which cannot start outside a click).
+ * Otherwise use the final (output, input) pair, which the run already checked.
+ */
+export function chunkLanguagePair(resolved, chunkAvailability) {
+  return chunkAvailability === 'available'
+    ? chunkLanguage(resolved)
+    : { outputLanguage: resolved.outputLanguage, expectedInputLanguages: [...resolved.expectedInputLanguages] };
+}
