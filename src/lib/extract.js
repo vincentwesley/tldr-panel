@@ -1,5 +1,6 @@
 // Page text extraction. Runs inside the target page (injected) and in jsdom tests.
 import { Readability, isProbablyReaderable } from '@mozilla/readability';
+import { pickSelection, MODE_AUTO } from './selection.js';
 
 export const MIN_ARTICLE_CHARS = 200;
 export const MAX_CHARS = 120000;
@@ -42,9 +43,25 @@ export function structuredText(root) {
   return out;
 }
 
-export function extractPage(doc) {
+/** Text the user has selected in this (top) frame. Selections inside iframes are not visible from here. */
+function readSelection(doc) {
+  try {
+    return doc.defaultView?.getSelection?.()?.toString() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function extractPage(doc, { mode = MODE_AUTO } = {}) {
   const title = (doc.title || '').trim();
   const lang = doc.documentElement?.lang || '';
+  const contentType = doc.contentType || '';
+  const selected = pickSelection(readSelection(doc), mode);
+  if (selected) {
+    // Same cap as the page path; the panel runs it through the same chunking pipeline.
+    const truncated = selected.length > MAX_CHARS;
+    return { title, lang, text: truncated ? selected.slice(0, MAX_CHARS) : selected, kind: 'selection', truncated, contentType };
+  }
   const rawLen = doc.body?.textContent?.length ?? 0;
   let text = '';
   let kind = 'article';
@@ -72,5 +89,5 @@ export function extractPage(doc) {
   }
   const truncated = text.length > MAX_CHARS;
   if (truncated) text = text.slice(0, MAX_CHARS);
-  return { title, lang, text, kind, truncated, contentType: doc.contentType || '' };
+  return { title, lang, text, kind, truncated, contentType };
 }

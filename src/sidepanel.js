@@ -4,14 +4,16 @@ import { consumeStream } from './lib/stream.js';
 import { renderMarkdown, toPlainText } from './lib/markdown.js';
 import { getTargetTab, chooseTab, extractFromTab, shouldStayStale, PageError, MSG } from './lib/page.js';
 import { createActivationListener } from './lib/activation.js';
+import { LANGUAGES, AUTO, ENGLISH, languageName, sanitizeLanguagePref, resolveLanguage, chunkLanguage, footnote, UNSUPPORTED_PAGE_NOTICE } from './lib/language.js';
+import { parseStoredPrefs, STORAGE_KEYS, DEFAULT_PREFS } from './lib/prefs.js';
+import { decideMode, MODE_AUTO, MODE_PAGE } from './lib/selection.js';
 
 const $ = (id) => document.getElementById(id);
 const STATES = ['loading', 'download', 'unavailable', 'notice', 'error', 'result'];
-const TYPES = ['tldr', 'key-points', 'headline'];
-const LENGTHS = ['short', 'medium', 'long'];
 const NEUTRAL_CODES = new Set(['internal', 'pdf', 'empty', 'file', 'no-grant']);
-const prefs = { type: 'tldr', length: 'medium' };
+const prefs = { ...DEFAULT_PREFS };
 const DEBOUNCE_MS = 400;
+const DOWNLOAD_INTRO = document.getElementById('download-intro')?.textContent ?? '';
 const NOTE_STOPPED = 'Stopped early. This summary is incomplete.';
 const NOTE_TRUNCATED = 'This page is very long; only the first part was summarized.';
 
@@ -22,6 +24,10 @@ let panelWindowId = null;
 let stale = false; // user switched tabs / the tab navigated since the last extraction
 let navigated = false;
 let activatedTabId = null; // last tab the user activated in this window since the current run began
+let pageMode = MODE_AUTO; // 'page' after "Summarize whole page instead"; reset by the next trigger / tab change
+let selectionActive = false; // the current run summarizes the user's selection
+let visibleStates = [];
+let activeLang = resolveLanguage(); // languages used by the current run
 let lastText = '';
 let controller = null;
 let runId = 0;
@@ -31,7 +37,14 @@ let debounceTimer = null;
 let statusTimer = null;
 
 // ---------- small UI helpers ----------
+function updateChip() {
+  const on = selectionActive && !stale && visibleStates.some((n) => ['loading', 'download', 'result', 'error'].includes(n));
+  $('mode-chip').hidden = !on;
+}
+
 function show(...names) {
+  visibleStates = names;
+  updateChip();
   for (const s of STATES) $(`state-${s}`).hidden = !names.includes(s);
   const loading = names.includes('loading');
   $('again-btn').hidden = loading || !names.some((n) => ['result', 'error', 'notice'].includes(n));
@@ -81,6 +94,7 @@ function focusIfLost(el) {
 
 function setStale(on) {
   stale = on;
+  updateChip();
   $('stale-banner').hidden = !on;
   setTitle(on ? '' : page?.title || page?.url || '');
 }
@@ -88,10 +102,7 @@ function setStale(on) {
 // ---------- preferences ----------
 async function loadPrefs() {
   try {
-    const stored = await chrome.storage.local.get(['type', 'length']);
-    const type = stored?.type === 'teaser' ? 'tldr' : stored?.type; // migrate the removed Teaser style
-    if (TYPES.includes(type)) prefs.type = type;
-    if (LENGTHS.includes(stored?.length)) prefs.length = stored.length;
+    Object.assign(prefs, parseStoredPrefs(await chrome.storage.local.get(STORAGE_KEYS)));
   } catch {
     /* storage unavailable or malformed: keep defaults */
   }
@@ -103,6 +114,7 @@ async function loadPrefs() {
   } catch {
     /* ignore */
   }
+  $('language').value = prefs.language;
   syncOptions();
 }
 
@@ -116,9 +128,14 @@ async function savePref(key, value) {
 }
 
 function syncOptions() {
-  $('more').hidden = prefs.type === 'headline'; // Detail does not apply to headlines
+  const headline = prefs.type === 'headline';
+  $('length-fs').hidden = headline; // Detail does not apply to headlines; Language still does
   const chosen = document.querySelector('input[name="length"]:checked + span');
-  $('more-summary').textContent = `Detail: ${chosen?.textContent || 'Standard'}`;
+  const parts = [];
+  if (!headline) parts.push(`Detail: ${chosen?.textContent || 'Standard'}`);
+  if (prefs.language !== AUTO) parts.push(`Language: ${languageName(prefs.language).replace(/ \(.*\)$/, '')}`);
+  $('more-summary').textContent = parts.join(', ') || 'More options';
+  $('footnote').textContent = footnote({ pref: prefs.language, resolved: activeLang });
 }
 
 function options(withContext = true) {
@@ -126,6 +143,8 @@ function options(withContext = true) {
     type: prefs.type,
     length: prefs.length,
     sharedContext: withContext && page?.title ? `Web page titled: ${page.title}` : undefined,
+    outputLanguage: activeLang.outputLanguage,
+    expectedInputLanguages: activeLang.expectedInputLanguages,
   });
 }
 
@@ -135,7 +154,7 @@ function showUnavailable(kind) {
   $('unavailable-title').textContent = missing ? 'Your version of Chrome is too old' : "Can't summarize on this device";
   $('unavailable-text').textContent = missing
     ? 'Update Chrome (menu > Help > About Google Chrome) to version 138 or newer on a desktop computer.'
-    : "Chrome's built-in AI isn't available here. This usually means the computer or Chrome setup doesn't meet its requirements (below), or the page isn't in English.";
+    : "Chrome's built-in AI isn't available here. This usually means the computer or Chrome setup doesn't meet its requirements (below), or the language you chose isn't available on it.";
   $('unavailable-extra').hidden = missing;
   show('unavailable');
   $('unavailable-title').focus();
@@ -159,6 +178,12 @@ function showDownload(availability) {
   const btn = $('download-btn');
   btn.textContent = availability === 'downloading' ? 'Resume download' : 'Download and summarize';
   btn.setAttribute('aria-disabled', 'false');
+  // Non-English summaries may need a separate language download; keep the wording accurate for that case.
+  const lang = [activeLang.outputLanguage, ...activeLang.expectedInputLanguages].find((l) => l !== 'en');
+  $('download-title').textContent = lang ? 'One-time setup: download a language for on-device AI' : "One-time setup: download Chrome's on-device AI";
+  $('download-intro').textContent = lang
+    ? `Summarizing in ${languageName(lang)} needs an extra one-time download: a language pack, or Chrome's on-device AI itself if it isn't set up yet. Chrome decides which. Best on Wi-Fi. After that it works offline, and the page you summarize never leaves your device.`
+    : DOWNLOAD_INTRO;
   $('download-progress-wrap').hidden = true;
   $('download-cancel-btn').hidden = true;
   show('download');
@@ -174,6 +199,8 @@ function describeError(e) {
     case 'AbortError':
       return { kind: 'abort' };
     case 'NotSupportedError':
+      // The API refused: only now tell the user their page language may be the problem.
+      if (!activeLang.pageSupported) return { kind: 'notice', title: 'Page language not supported', message: UNSUPPORTED_PAGE_NOTICE };
       return { kind: 'error', title: 'Language not supported', message: "Chrome's on-device summarizer doesn't support this page's language or these options yet." };
     case 'NetworkError':
       return { kind: 'error', title: 'Download failed', message: 'The model download failed. Check your connection and try again.' };
@@ -218,7 +245,7 @@ const resolveTab = (tabId, wasStale) =>
   chooseTab({ tabId, stale: wasStale, currentTabId }, { getTab: (id) => chrome.tabs.get(id), getActive: getTargetTab });
 
 // ---------- main flow ----------
-async function run({ tabId = null, reextract = true } = {}) {
+async function run({ tabId = null, reextract = true, mode = null, fresh = false } = {}) {
   clearTimeout(debounceTimer);
   const id = ++runId;
   const signal = newController();
@@ -228,6 +255,7 @@ async function run({ tabId = null, reextract = true } = {}) {
   setNote();
   setStatus('');
   activatedTabId = null;
+  selectionActive = false;
   const wasStale = stale; // the banner stays up until a fresh page was actually read
   setTitle('');
   setBusy(true);
@@ -235,7 +263,8 @@ async function run({ tabId = null, reextract = true } = {}) {
   setLoading('Reading page...');
   let availability;
   try {
-    availability = await adapter.availability(options(false));
+    // Cheap device-level check first (before reading any page), with English defaults.
+    availability = await adapter.availability(adapter.buildOptions());
     if (id !== runId) return;
     if (availability === 'missing' || availability === 'unavailable') {
       showUnavailable(availability);
@@ -244,21 +273,40 @@ async function run({ tabId = null, reextract = true } = {}) {
     if (reextract || !page) {
       const tab = await resolveTab(tabId, wasStale);
       if (id !== runId) return;
+      const tabChanged = wasStale || (tab?.id ?? null) !== currentTabId;
       currentTabId = tab?.id ?? null;
-      let fresh;
+      pageMode = decideMode({ explicit: mode, fresh, tabChanged, current: pageMode });
+      let extracted;
       try {
-        fresh = await extractFromTab(tab, { afterClick: tabId != null });
+        extracted = await extractFromTab(tab, { afterClick: tabId != null, mode: pageMode });
       } catch (e) {
         if (id === runId) page = null; // never summarize a stale page after a failed re-extraction
         throw e;
       }
       if (id !== runId) return; // a newer run owns `page`
-      page = fresh;
+      page = extracted;
+    }
+    selectionActive = page.kind === 'selection';
+    // Languages depend on the page (Auto follows its declared language). Fall back to English in Auto when the
+    // pair is unavailable; an explicit choice that is unavailable is reported instead of silently ignored.
+    activeLang = resolveLanguage({ pref: prefs.language, pageLang: page.lang });
+    availability = await adapter.availability(options(false));
+    if (id !== runId) return;
+    if (availability === 'unavailable' && activeLang.auto) {
+      activeLang = { ...activeLang, ...ENGLISH };
+      availability = await adapter.availability(options(false));
+      if (id !== runId) return;
+    }
+    syncOptions();
+    if (availability === 'unavailable') {
+      showError('Language not available', `Chrome's on-device summarizer can't write ${languageName(activeLang.outputLanguage)} summaries on this device. Choose another language in More options.`);
+      return;
     }
     navigated = false;
     // The user may have switched tabs while the text was being read: keep the banner up in that case.
     setStale(shouldStayStale({ runTabId: currentTabId, activatedTabId }));
     setTitle(page.title || page.url || '');
+    if (selectionActive) setStatus('Summarizing your selection');
     if (availability === 'downloadable' || availability === 'downloading') {
       showDownload(availability);
       return;
@@ -334,7 +382,7 @@ async function summarizePage(signal, id, preCreated) {
       return;
     }
   }
-  setLoading('Reading the page...');
+  setLoading(selectionActive ? 'Reading your selection...' : 'Reading the page...');
   show('loading');
   let chunkSummarizer = null;
   const context = page.title ? `Page title: ${page.title}` : undefined;
@@ -345,7 +393,7 @@ async function summarizePage(signal, id, preCreated) {
       signal,
       measure: (t) => adapter.measureInputUsage(s, t),
       summarizeChunk: async (t) => {
-        chunkSummarizer ??= await adapter.create(adapter.buildOptions({ type: 'key-points', length: 'medium' }), { signal });
+        chunkSummarizer ??= await adapter.create(adapter.buildOptions({ type: 'key-points', length: 'medium', ...chunkLanguage(activeLang) }), { signal });
         return adapter.summarize(chunkSummarizer, t, { context, signal });
       },
       summarizeFinal: (t) =>
@@ -378,7 +426,7 @@ async function summarizePage(signal, id, preCreated) {
     renderResult(out);
     setNote(truncatedNote);
     show('result');
-    setStatus('Summary ready');
+    setStatus(selectionActive ? 'Summary of your selection ready' : 'Summary ready');
     focusIfLost($('result'));
   } finally {
     adapter.destroy(s);
@@ -434,7 +482,7 @@ async function initTabTracking() {
       runtimeId: chrome.runtime.id,
       onActivated: (tabId) => {
         if (running && tabId === currentTabId) return; // the initial run for this very click is already in flight
-        run({ tabId });
+        run({ tabId, fresh: true });
       },
     }),
   );
@@ -447,18 +495,25 @@ function scheduleRerun() {
 
 async function init() {
   $('controls').addEventListener('submit', (e) => e.preventDefault());
+  for (const l of LANGUAGES) {
+    const o = document.createElement('option');
+    o.value = l.code;
+    o.textContent = l.name;
+    $('language').append(o);
+  }
   await loadPrefs();
-  for (const input of document.querySelectorAll('#controls input')) {
+  for (const input of document.querySelectorAll('#controls input, #controls select')) {
     input.addEventListener('change', async () => {
-      await savePref(input.name, input.value);
+      await savePref(input.name, input.name === 'language' ? sanitizeLanguagePref(input.value) : input.value);
       syncOptions();
       scheduleRerun();
     });
   }
   $('again-btn').addEventListener('click', () => {
     if ($('again-btn').getAttribute('aria-disabled') === 'true') return;
-    run();
+    run({ fresh: true }); // re-reads the page, so a new selection is picked up
   });
+  $('whole-page-btn').addEventListener('click', () => run({ mode: MODE_PAGE }));
   $('copy-btn').addEventListener('click', copy);
   const cancel = () => controller?.abort();
   $('cancel-btn').addEventListener('click', cancel);
