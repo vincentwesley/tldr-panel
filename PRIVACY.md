@@ -7,7 +7,7 @@ AI model on your own device.
   Chrome's on-device model. TL;DR Panel has no server, no account, no API key, no analytics
   and no telemetry.
 - **No remote code.** All code ships inside the extension package.
-- **What is stored.** Only your chosen summary style and length, saved with
+- **What is stored.** Only your chosen summary style, length and language, saved with
   `chrome.storage.local` on your device. Page text and summaries are never stored.
 - **When it reads a page.** Page text is read only when you click the toolbar icon or use the
   shortcut, or press "Summarize again" while access to that tab remains granted by Chrome's
