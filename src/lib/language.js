@@ -1,14 +1,17 @@
 // Output-language logic. Pure: no Chrome APIs. UI chrome text stays English; only the summary language varies.
 
 /**
- * Output languages offered in the picker. EDIT THIS LIST ONLY: conservative default = the languages Chrome documents
- * for the Summarizer (en, es, ja); to be re-verified empirically in real Chrome and adjusted.
+ * Output languages offered in the picker. EDIT THIS LIST ONLY. Verified empirically in real Chrome 153 (2026-09-20):
+ * Summarizer.availability() said 'available' for exactly en, es, ja, fr, de (as output and as input language) and
+ * 'unavailable' for pt, it, ko, zh, hi, ar, ru; a real summarize() was run for fr, de, es and ja. See DECISIONS.md.
  * name = what the picker shows (native name first so speakers can find it).
  */
 export const LANGUAGES = [
   { code: 'en', name: 'English' },
   { code: 'es', name: 'Espa\u00f1ol (Spanish)' },
   { code: 'ja', name: '\u65e5\u672c\u8a9e (Japanese)' },
+  { code: 'fr', name: 'Fran\u00e7ais (French)' },
+  { code: 'de', name: 'Deutsch (German)' },
 ];
 
 export const AUTO = 'auto';
