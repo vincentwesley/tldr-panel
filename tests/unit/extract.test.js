@@ -85,6 +85,15 @@ describe('extractPage selection', () => {
     expect(extractPage(sel('too short')).kind).not.toBe('selection');
     expect(extractPage(sel('Selected sentence about harbours. '.repeat(8)), { mode: 'page' }).kind).not.toBe('selection');
   });
+  it('a whitespace / nbsp / zero-width-only selection falls back to the page', () => {
+    for (const junk of ['  ​\n'.repeat(300), '​'.repeat(400), ' '.repeat(400)]) {
+      const doc = sel('x');
+      doc.defaultView.getSelection = () => ({ toString: () => junk });
+      const r = extractPage(doc);
+      expect(r.kind).not.toBe('selection');
+      expect(r.text).toContain('committee reviewed');
+    }
+  });
   it('caps a huge selection at MAX_CHARS and flags truncation', () => {
     const r = extractPage(sel('x '.repeat(MAX_CHARS)));
     expect(r.kind).toBe('selection');

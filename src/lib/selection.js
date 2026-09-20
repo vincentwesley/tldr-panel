@@ -1,6 +1,6 @@
 // "Summarize my selection": pure decisions, shared by the injected extractor and the panel.
 
-/** Selections shorter than this (after whitespace clean-up) are ignored and the whole page is used. */
+/** Selections with fewer non-whitespace characters than this (after clean-up) are ignored and the whole page is used. */
 export const MIN_SELECTION_CHARS = 150;
 
 export const MODE_AUTO = 'auto'; // use the selection when it is long enough, else the whole page
@@ -9,11 +9,13 @@ export const MODE_PAGE = 'page'; // the user asked for the whole page
 /** Same whitespace normalisation the page extractor applies to its text. */
 export function cleanSelection(s) {
   return String(s || '')
+    .replace(/[\u200b-\u200d\ufeff]/g, '') // zero-width characters count as nothing
     .replace(/\r/g, '')
     .replace(/\u00a0/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ') // collapse internal runs of spaces
     .trim();
 }
 
@@ -21,7 +23,7 @@ export function cleanSelection(s) {
 export function pickSelection(raw, mode = MODE_AUTO) {
   if (mode === MODE_PAGE) return '';
   const text = cleanSelection(raw);
-  return text.length >= MIN_SELECTION_CHARS ? text : '';
+  return text.replace(/\s/g, '').length >= MIN_SELECTION_CHARS ? text : '';
 }
 
 /**

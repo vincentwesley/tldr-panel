@@ -36,6 +36,24 @@ describe('decideMode', () => {
   });
 });
 
+describe('zero-width and whitespace-only selections', () => {
+  it('strips zero-width characters', () => {
+    expect(cleanSelection('a​b‌c‍d﻿e')).toBe('abcde');
+  });
+  it('a ZWSP-only or nbsp-only selection is not a selection', () => {
+    expect(pickSelection('​'.repeat(500))).toBe('');
+    expect(pickSelection(' '.repeat(500))).toBe('');
+    expect(pickSelection('﻿ ​\n'.repeat(200))).toBe('');
+  });
+  it('counts non-whitespace characters, so space-padded text below the threshold falls back', () => {
+    const padded = 'a b '.repeat(60); // 240 chars, only 120 non-whitespace
+    expect(padded.length).toBeGreaterThan(MIN_SELECTION_CHARS);
+    expect(pickSelection(padded)).toBe('');
+    expect(pickSelection('a b '.repeat(80))).not.toBe(''); // 160 non-whitespace
+    expect(cleanSelection('a    b\n\n\n\nc')).toBe('a b\n\nc');
+  });
+});
+
 describe('cleanSelection whitespace', () => {
   it('turns non-breaking spaces into plain spaces', () => {
     expect(cleanSelection('a\u00a0b')).toBe('a b');
