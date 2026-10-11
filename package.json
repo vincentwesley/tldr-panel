@@ -23,7 +23,7 @@
     "icons": "node scripts/icons.mjs"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "^10.0.1",
     "@mozilla/readability": "^0.6.0",
     "@playwright/test": "^1.63.0",
     "adm-zip": "^0.6.1",
