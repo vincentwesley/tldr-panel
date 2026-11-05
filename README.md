@@ -101,3 +101,5 @@ and [DECISIONS.md](DECISIONS.md). Report bugs at
 ## License
 
 MIT. Third-party notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Provided as is, without warranty of any kind.
