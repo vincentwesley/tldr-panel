@@ -1,3 +1,4 @@
+import './brand/logo-resize.js';
 import * as adapter from './lib/summarizer.js';
 import { summarizeLong } from './lib/pipeline.js';
 import { consumeStream } from './lib/stream.js';
@@ -517,7 +518,7 @@ async function init() {
     $('language').append(o);
   }
   await loadPrefs();
-  for (const input of document.querySelectorAll('#controls input, #controls select')) {
+  for (const input of document.querySelectorAll('#controls input:not([data-logo-form]), #controls select')) {
     input.addEventListener('change', async () => {
       await savePref(input.name, input.name === 'language' ? sanitizeLanguagePref(input.value) : input.value);
       syncOptions();

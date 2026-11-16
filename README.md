@@ -98,6 +98,9 @@ Load `dist/` at `chrome://extensions` with Developer mode on. See [CONTRIBUTING.
 and [DECISIONS.md](DECISIONS.md). Report bugs at
 <https://github.com/vincentwesley/tldr-panel/issues>. Source: <https://github.com/vincentwesley/tldr-panel>.
 
+## Credits
+Designed and built by Vin, Vin's Atelier (https://vwesley.dev). Logo by @portus_workstation / @wason25_pz (Instagram); the logo is all rights reserved (see NOTICE.md), not covered by the MIT licence.
+
 ## License
 
 MIT. Third-party notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

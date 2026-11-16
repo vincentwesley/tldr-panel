@@ -21,6 +21,7 @@ await build({ ...common, entryPoints: [path.join(root, 'src/extract-entry.js')],
 
 await cp(path.join(root, 'src/sidepanel.html'), path.join(out, 'sidepanel.html'));
 await cp(path.join(root, 'src/sidepanel.css'), path.join(out, 'sidepanel.css'));
+await cp(path.join(root, 'src/logo-init.js'), path.join(out, 'logo-init.js'));
 await cp(path.join(root, 'src/icons'), path.join(out, 'icons'), { recursive: true });
 await cp(path.join(root, 'LICENSE'), path.join(out, 'LICENSE'));
 await cp(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(out, 'THIRD_PARTY_NOTICES.md'));
