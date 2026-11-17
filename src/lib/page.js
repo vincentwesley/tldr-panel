@@ -91,6 +91,9 @@ export function shouldStayStale({ runTabId, activatedTabId }) {
  */
 export async function extractFromTab(tab, { afterClick = false, mode = 'auto' } = {}) {
   if (!tab || tab.id == null) throw new PageError(MSG.noGrant, 'no-grant');
+  // Newer Chromium exposes an extension's own page URL without a grant: this panel opened as a tab is not a page to read.
+  const own = globalThis.chrome?.runtime?.getURL?.('');
+  if (own && tab.url?.startsWith(own)) throw new PageError(MSG.noGrant, 'no-grant');
   const early = classifyPage({ url: tab.url });
   if (early) throw early;
   let result;
