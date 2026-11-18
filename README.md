@@ -81,6 +81,10 @@ Summaries are AI output, so they can be wrong.
 
 There are no host permissions. See [PRIVACY.md](PRIVACY.md).
 
+## Secrets and network
+
+No secrets, API keys or accounts are needed. The extension makes no network requests of its own: it never calls `fetch`, has no host permissions, and its CSP sets `connect-src 'none'`. The page text is summarised by Chrome's built-in on-device model; the one-time model download is performed by Chrome itself (see [PRIVACY.md](PRIVACY.md)). Settings are kept in `chrome.storage.local` on your device.
+
 ## Develop
 
 ```
