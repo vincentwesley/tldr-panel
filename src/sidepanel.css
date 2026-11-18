@@ -1,6 +1,6 @@
-/* Design tokens. Spacing 4/8/12/16/24, one accent, semantic colours, no shadows. */
+/* Design tokens. Spacing 4/8/12/16/24, one accent, semantic colours, offset-shadow buttons, square corners. */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 
   --s1: 4px;
   --s2: 8px;
@@ -16,11 +16,29 @@
   --lh-ui: 1.5;
   --lh-read: 1.6;
 
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --target: 32px;
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
+  --target: 44px;
 
+  --bg: #15181d;
+  --surface: #1f242b;
+  --text: #e8eaed;
+  --muted: #a3acb8;
+  --border: #2f363f;
+  --border-ui: #737e8b;
+  --accent: #8ab4f8;
+  --on-accent: #0b1220;
+  --focus: #8ab4f8;
+  --danger: #ff8a80;
+  --danger-bg: #2a1a19;
+  --banner-bg: #3a3212;
+  --banner-text: #f5e7a8;
+  --skeleton: #262c34;
+  --skeleton-hi: #323a44;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
   --bg: #ffffff;
   --surface: #f3f5f8;
   --text: #1b1f24;
@@ -36,25 +54,6 @@
   --banner-text: #4a3a00;
   --skeleton: #e3e7ed;
   --skeleton-hi: #f3f5f8;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15181d;
-    --surface: #1f242b;
-    --text: #e8eaed;
-    --muted: #a3acb8;
-    --border: #2f363f;
-    --border-ui: #737e8b;
-    --accent: #8ab4f8;
-    --on-accent: #0b1220;
-    --focus: #8ab4f8;
-    --danger: #ff8a80;
-    --danger-bg: #2a1a19;
-    --banner-bg: #3a3212;
-    --banner-text: #f5e7a8;
-    --skeleton: #262c34;
-    --skeleton-hi: #323a44;
-  }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -186,6 +185,8 @@ button {
   border: 1px solid var(--border-ui); background: var(--surface); color: var(--text); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
+button { box-shadow: 2px 2px 0 var(--border-ui); }
+button.link-btn, button.ghost, button.icon-btn { box-shadow: none; }
 button:hover { border-color: var(--text); }
 button[aria-disabled="true"] { opacity: 0.55; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
@@ -198,6 +199,7 @@ button.ghost:active, button.icon-btn:active { background: var(--border); }
 button.ghost { font-weight: 500; }
 button.ghost { margin-inline-start: calc(var(--s2) * -1); }
 button.icon-btn { width: var(--target); height: var(--target); padding: 0; flex: none; margin-inline-end: calc(var(--s2) * -1); background: var(--surface); }
+button.theme-btn { margin-inline-end: 0; }
 button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .i-check { display: none; }
 #copy-btn[data-state="done"] { color: var(--accent); }
@@ -315,11 +317,8 @@ html[data-logo="long"] {
 .studio-signoff :is(.bl-in, .bl-atelier) {
   fill: #ffffff;
 }
-/* No theme attribute here: the panel follows the system theme. */
-@media (prefers-color-scheme: light) {
-  .studio-signoff :is(.bl-in, .bl-atelier) {
-    fill: #333333;
-  }
+html[data-theme="light"] .studio-signoff :is(.bl-in, .bl-atelier) {
+  fill: #333333;
 }
 /* "in" (464..734 wide) is uncovered as the chevron passes (gone at 540), then fades out by 900 as "Atelier" comes in. */
 .studio-signoff .bl-in {

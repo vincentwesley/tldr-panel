@@ -231,10 +231,10 @@ test('reduced motion: no tug at all, the tooltip stays', async () => {
   await expect(link(page)).toHaveAttribute('title', 'Drag sideways to resize');
 });
 
-test('logo fill follows the system theme: #333 on light, white on dark', async () => {
+test('logo fill follows the theme toggle: #333 on light, white on dark', async () => {
   const page = await open();
-  await page.emulateMedia({ colorScheme: 'light' });
-  expect(await page.locator(`${SIGN} .bl-atelier`).evaluate((el) => getComputedStyle(el).fill)).toBe('rgb(51, 51, 51)');
-  await page.emulateMedia({ colorScheme: 'dark' });
-  expect(await page.locator(`${SIGN} .bl-atelier`).evaluate((el) => getComputedStyle(el).fill)).toBe('rgb(255, 255, 255)');
+  const fill = () => page.locator(`${SIGN} .bl-atelier`).evaluate((el) => getComputedStyle(el).fill);
+  expect(await fill()).toBe('rgb(255, 255, 255)');
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+  expect(await fill()).toBe('rgb(51, 51, 51)');
 });

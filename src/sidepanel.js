@@ -1,3 +1,4 @@
+import { initThemeToggle } from './brand/theme.js';
 import './brand/logo-resize.js';
 import * as adapter from './lib/summarizer.js';
 import { summarizeLong } from './lib/pipeline.js';
@@ -542,4 +543,5 @@ async function init() {
   run();
 }
 
+initThemeToggle($('theme-toggle'));
 init();

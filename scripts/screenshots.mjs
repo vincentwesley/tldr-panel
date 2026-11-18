@@ -45,6 +45,7 @@ async function panelShot(name, scenario, scheme, ready) {
   const p = await ctx.newPage();
   await p.setViewportSize({ width: 420, height: 800 });
   await p.emulateMedia({ colorScheme: scheme });
+  await p.addInitScript((t) => localStorage.setItem('theme', t), scheme);
   await p.addInitScript(installFake, scenario);
   await p.goto(`chrome-extension://${extId}/sidepanel.html?tabId=${tabId}`);
   await p.locator(ready).waitFor({ timeout: 20000 });

@@ -76,7 +76,9 @@ async function openPanel({ ctx, sw, extId }, { scenario, scheme = 'light', fixtu
   await target.bringToFront();
   const tabId = await activeTabId(sw);
   const panel = await ctx.newPage();
-  await panel.emulateMedia({ colorScheme: scheme });
+  await panel.emulateMedia({ colorScheme: scheme === 'dark' ? 'dark' : 'light' });
+  // The panel ignores the OS scheme; the light theme is opt-in via stored 'theme'.
+  if (scheme === 'light') await panel.addInitScript(() => localStorage.setItem('theme', 'light'));
   if (scenario) await panel.addInitScript(installFake, scenario);
   if (init) await panel.addInitScript(init);
   await panel.goto(`chrome-extension://${extId}/sidepanel.html?tabId=${tabId}`);
@@ -85,6 +87,29 @@ async function openPanel({ ctx, sw, extId }, { scenario, scheme = 'light', fixtu
 
 const fakeCalls = (panel) => panel.evaluate(() => window.__fakeCalls);
 const resultLis = (panel) => panel.locator('#result li');
+
+test.describe('theme', () => {
+  test('light OS + empty storage loads dark; toggle switches to light and persists', async () => {
+    const h = await launch(DIST_E2E);
+    try {
+      const { panel } = await openPanel(h, { scenario: 'success', scheme: 'os-light' });
+      await panel.emulateMedia({ colorScheme: 'light' });
+      const theme = () => panel.evaluate(() => document.documentElement.dataset.theme);
+      const bg = () => panel.evaluate(() => getComputedStyle(document.body).backgroundColor);
+      expect(await theme()).toBe('dark');
+      expect(await bg()).toBe('rgb(21, 24, 29)');
+      const t = panel.locator('#theme-toggle');
+      expect((await t.boundingBox()).height).toBeGreaterThanOrEqual(44);
+      await t.click();
+      expect(await theme()).toBe('light');
+      expect(await bg()).toBe('rgb(255, 255, 255)');
+      await panel.reload();
+      expect(await theme()).toBe('light');
+    } finally {
+      await h.ctx.close();
+    }
+  });
+});
 
 test.describe('with fake Summarizer (e2e build)', () => {
   let h;

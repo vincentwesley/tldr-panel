@@ -97,6 +97,7 @@ for (const [name, scenario, fixture, ready, act, init, build = 'e2e'] of STATES)
       const p = await ctx.newPage();
       await p.setViewportSize({ width: w, height: 640 });
       await p.emulateMedia({ colorScheme: scheme, ...(forced ? { forcedColors: 'active' } : {}) });
+      await p.addInitScript((t) => localStorage.setItem('theme', t), scheme);
       await p.addInitScript(installFake, scenario);
       if (init) await p.addInitScript(init);
       if (rtl) await p.addInitScript(() => document.addEventListener('DOMContentLoaded', () => { document.documentElement.dir = 'rtl'; }));
